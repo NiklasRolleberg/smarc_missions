@@ -18,14 +18,16 @@ from imc_ros_bridge.msg import PlanControlState
 from geometry_msgs.msg import Pose, Quaternion
 from sensor_msgs.msg import NavSatFix
 from std_msgs.msg import Float64, Bool, Empty
-from sam_msgs.msg import PercentStamped
+#from sam_msgs.msg import PercentStamped
 
 import actionlib_msgs.msg as actionlib_msgs
 
 import rospy
 import tf
 
-from sam_globals import *
+#TODO find a good way to choose vehicle, or make everything more general?
+from lolo_globals import *
+#from sam_globals import *
 
 
 from bt_common import *
@@ -94,7 +96,7 @@ class A_EmergencySurface(pt.behaviour.Behaviour):
 
     def setup(self, timeout):
         try:
-            self.emergency_vbs_cmd = rospy.Publisher(SAM_VBS_CMD_TOPIC, PercentStamped, queue_size=1)
+            #self.emergency_vbs_cmd = rospy.Publisher(SAM_VBS_CMD_TOPIC, PercentStamped, queue_size=1)
             self.abort_pub = rospy.Publisher(ABORT_TOPIC, Empty, queue_size=1)
             return True
         except:
@@ -112,10 +114,12 @@ class A_EmergencySurface(pt.behaviour.Behaviour):
         # set the VBS to 0, so it empties the tank
         # if someone else is also setting it, nothing else
         # we can do but trust that they will listen to the /abort too
-        ps = PercentStamped()
-        ps.value = 0
-        ps.header.stamp = rospy.Time.now()
-        self.emergency_vbs_cmd.publish(ps)
+        #ps = PercentStamped()
+        #ps.value = 0
+        #ps.header.stamp = rospy.Time.now()
+        #self.emergency_vbs_cmd.publish(ps)
+
+        #TODO : send "abort" to lolo captain 
 
         self.feedback_message = "ABORTED"
         self.bb.set(CURRENTLY_RUNNING_ACTION, 'A_EmergencySurface')
@@ -381,7 +385,7 @@ class A_PublishToNeptus(pt.behaviour.Behaviour):
         Always returns SUCCESS
         """
         self.bb = pt.blackboard.Blackboard()
-        self.estimated_state_pub = rospy.Publisher(ESTIMATED_STATE_TOPIC, Pose, queue_size=1)
+        #self.estimated_state_pub = rospy.Publisher(ESTIMATED_STATE_TOPIC, Pose, queue_size=1) # <- published from another node
         self.plan_control_state_pub = rospy.Publisher(PLAN_CONTROL_STATE_TOPIC, PlanControlState, queue_size=1)
 
         super(A_PublishToNeptus, self).__init__("A_PublishToNeptus")
@@ -473,7 +477,7 @@ class A_PublishToNeptus(pt.behaviour.Behaviour):
         """
         mostly scavenged from Chris's stuff (sprague@kth.se)
         """
-        self.update_estimated_state()
+        #self.update_estimated_state()
         self.update_plan_control_state()
 
         return pt.Status.SUCCESS
