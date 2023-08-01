@@ -17,7 +17,6 @@ find_package(catkin REQUIRED COMPONENTS
   actionlib_msgs
   ddynamic_reconfigure_python
   visualization_msgs
-  lolo_msgs
   smarc_msgs
   vision_msgs
   actionlib
