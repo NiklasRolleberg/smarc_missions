@@ -21,12 +21,13 @@ import rospy, tf
 
 from smarc_msgs.msg import ThrusterFeedback, ThrusterRPM
 from std_msgs.msg import Float32
+from geometry_msgs.msg import Twist
 
 class ROSLolo(object):
     def __init__(self,
                  lolo,
                  robot_name="lolo",
-                 reference_link = "world_ned",
+                 reference_link = "map", #utm
                  update_freq = 10,
                  control_thrusters=True,
                  control_elevons=True,
@@ -51,6 +52,9 @@ class ROSLolo(object):
                 break
             except:
                 rospy.logwarn("Could not get tf between {} and {}, waiting until we do".format(self.reference_link, self.base_link))
+
+        self.twist_sub = rospy.Subscriber(robot_name+"/dr/twist", Twist, self.twist_cb, queue_size=1)
+        self.altitude_sub = rospy.Subscriber(robot_name+"/dr/altitude", Float32, self.altitude_cb, queue_size=1)
 
         self.control_thrusters = control_thrusters
         if control_thrusters:
@@ -95,7 +99,7 @@ class ROSLolo(object):
         trans, ori_quat = self.tf_listener.lookupTransform(self.reference_link, self.base_link, rospy.Time(0))
         self.lolo.update_pos(x = trans[0],
                              y = trans[1],
-                             depth = trans[2])
+                             depth = -trans[2])
 
         ori_rpy = tf.transformations.euler_from_quaternion(ori_quat)
         self.lolo.update_ori(r = ori_rpy[0],
@@ -113,7 +117,7 @@ class ROSLolo(object):
             t2 = int(np.sign(self.lolo.desired_rpms[1]) * t2m)
             self.t1_pub.publish(t1)
             self.t2_pub.publish(t2)
-
+        
         if self.control_elevons:
             self.elevon_p_pub.publish(self.lolo.desired_elevon_angles[0])
             self.elevon_s_pub.publish(self.lolo.desired_elevon_angles[1])
@@ -123,7 +127,14 @@ class ROSLolo(object):
 
         if self.control_elevator:
             self.elevator_pub.publish(self.lolo.desired_elevator_angle)
-
+    
+    def twist_cb(self, msg):
+        self.lolo.update_angular_vel(pitchrate=msg.angular.y, yawrate=msg.angular.z, rollrate=msg.angular.x)
+        self.lolo.update_linear_vel(vx=msg.linear.x, vy=msg.linear.y, vz=msg.linear.z)
+    
+    def altitude_cb(self, msg):
+        self.lolo.update_altitude(alt=msg.data)
+        
     def t1_cb(self, msg):
         self.lolo.update_thruster_rpms(port=msg.rpm.rpm)
 

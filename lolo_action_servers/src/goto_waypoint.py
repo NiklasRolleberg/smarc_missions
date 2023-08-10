@@ -41,14 +41,6 @@ class LoloGotoWP(object):
 
         # see launch/config.yaml
         self.lolo = Lolo(max_rpm = get_param("max_rpm", 500),
-                         max_fin_radians = get_param("max_fin_radians", 0.6),
-                         rudder_Kp = get_param("rudder_Kp", 50),
-                         elevator_Kp = get_param("elevator_Kp", 50),
-                         thruster_drive_Kp = get_param("thruster_drive_Kp", 10),
-                         rudder_cone_degrees = get_param("rudder_cone_degrees", 5.72),
-                         forward_cone_degrees = get_param("forward_cone_degrees", 10),
-                         enable_spiral = get_param("enable_spiral", False),
-                         enable_thruster_turn = get_param("enable_thruster_turn", True),
                          useless_rudder_depth = get_param("useless_rudder_depth", 0.8))
 
         self.ros_lolo = ROSLolo(lolo = self.lolo,
@@ -120,9 +112,12 @@ class LoloGotoWP(object):
         target_posi = goal_pose_stamped.pose.position
 
         # acquire the depth
+        altitude = None
         if wp.z_control_mode == GotoWaypoint.Z_CONTROL_DEPTH:
             depth = wp.travel_depth
-        # no other type of control yet
+        elif wp.z_control_mode == GotoWaypoint.Z_CONTROL_ALTITUDE:
+            depth = wp.travel_depth
+            altitude = wp.travel_altitude
         else:
             rospy.logwarn("Lolo only does DEPTH control! Setting depth to 0")
             depth = 0
@@ -135,16 +130,17 @@ class LoloGotoWP(object):
             rpm = 0
 
         tolerance = wp.goal_tolerance
-        if tolerance < 0.5:
+        if tolerance < 2:
             rospy.logwarn("Goal tolerance is too small, lolo is not a surgeon! Setting to 0.5m")
-            tolerance = 0.5
+            tolerance = 2
 
         # set internal goal from message params
         self.lolo.set_goal(x = target_posi.x,
                            y = target_posi.y,
                            depth = depth,
                            rpm = rpm,
-                           tolerance = tolerance)
+                           tolerance = tolerance,
+                           altitude = altitude)
 
         # and finally, we start spinning and controlling things
         rate = rospy.Rate(self.update_freq)
@@ -162,7 +158,7 @@ class LoloGotoWP(object):
             else:
                 self.feedback(cm)
 
-            if  xy_dist <= tolerance and np.abs(depth_dist) <= tolerance:
+            if  xy_dist <= tolerance: #and np.abs(depth_dist) <= tolerance:
                 # success~
                 break
 
