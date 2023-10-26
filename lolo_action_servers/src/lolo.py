@@ -86,7 +86,7 @@ class Lolo(object):
     DRIVE = "DRIVE"
 
     def __init__(self,
-                 max_rpm = 2000,
+                 max_rpm = 100,
                  useless_rudder_depth = 0.8):
         """
         A container object that abstracts away ros-related stuff for a nice abstract vehicle
@@ -139,12 +139,12 @@ class Lolo(object):
         #Pid controllers
         self.depth_PID = PID(0.1,0,0, np.radians(20)) # max 20 deg pitch
         self.speed_PID = PID(10,0,0, 1000) #1000 RPM max output
-        self.pitch_PID = PID(2,0.1,0, np.radians(2)) #Max 10 deg/s pitch
+        self.pitch_PID = PID(1,0.1,0, np.radians(2)) #Max 10 deg/s pitch
         self.roll_PID = PID(0.1,0,0, np.radians(30))   #Max 10 deg/s roll
         self.yaw_PID = PID(2,0,0, np.radians(5))  #Max 10 deg/s yaw
 
         #Rate PIDs not used at the moment. 
-        self.pitch_rate_PID = PID(10,0,0, np.radians(30))  #max 30 deg elevator angle
+        self.pitch_rate_PID = PID(2,0,0, np.radians(30))  #max 30 deg elevator angle
         self.roll_rate_PID = PID(1,0,0, np.radians(30))  #max 30 deg elevon angle
         self.yaw_rate_PID = PID(2,0.1,0, np.radians(30)) #max 30 deg rudder angle
 
@@ -291,7 +291,9 @@ class Lolo(object):
     def control_yawRate(self):
         #set setpoint for rudders (and thrusters based on speed)
         self.desired_rudder_angle = self.yaw_rate_PID.update(self.yawRate, self.desired_yawRate)
-        rpm_actuation = max(-500, min( 500, 1000*self.desired_rudder_angle))
+
+        rpm_fade_out = max(0, 0.8 - abs(self.vx)) if self.depth > 1 else 1
+        rpm_actuation = max(-500, min( 500, 1000*self.desired_rudder_angle)) * rpm_fade_out
         self.desired_rpms[0] += rpm_actuation
         self.desired_rpms[1] -= rpm_actuation
         #print("\t\tDesired yawrate: " + str(np.rad2deg(self.desired_yawRate)) + " deg/s")
