@@ -159,13 +159,13 @@ class Lolo(object):
         self.depth_PID = PID(0.1,0,0, np.radians(20)) # max 20 deg pitch
         self.speed_PID = PID(10,0,0, 300) #300 RPM max output
         self.pitch_PID = PID(0.5,0.1,0, np.radians(10)) #Max 10 deg/s pitch
-        self.roll_PID = PID(1,0,0, np.radians(5))   #Max 5 deg/s roll
+        self.roll_PID = PID(2,0,0, np.radians(5))   #Max 5 deg/s roll
         self.yaw_PID = PID(2,0,0, np.radians(5))  #Max 5 deg/s yaw
 
         #Rate PIDs not used at the moment. 
         self.pitch_rate_PID = PID(1,0.1,0.5, np.radians(30))  #max 30 deg elevator angle
-        self.roll_rate_PID = PID(1,0,0, np.radians(30))  #max 30 deg elevon angle
-        self.yaw_rate_PID = PID(2,0.1,0, np.radians(30)) #max 30 deg rudder angle
+        self.roll_rate_PID = PID(2,0,0, np.radians(30))  #max 30 deg elevon angle
+        self.yaw_rate_PID = PID(2,0,0, np.radians(30)) #max 30 deg rudder angle
 
     def _reset_desires(self):
         print("Reset setpoints to 0 and reset controllers")
@@ -304,8 +304,8 @@ class Lolo(object):
     def control_rollRate(self):
         #set setpoint for elevons
         actuation = self.roll_rate_PID.update(self.rollRate, self.desired_rollRate)
-        self.desired_elevon_angles[0] = actuation + self.desired_elevator_angle
-        self.desired_elevon_angles[1] = -actuation + self.desired_elevator_angle
+        self.desired_elevon_angles[0] = -actuation #+ self.desired_elevator_angle
+        self.desired_elevon_angles[1] = actuation #+ self.desired_elevator_angle
 
     def control_yawRate(self):
         #set setpoint for rudders (and thrusters based on speed)
