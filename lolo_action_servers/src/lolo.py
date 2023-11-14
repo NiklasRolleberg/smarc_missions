@@ -19,6 +19,7 @@ from __future__ import division, print_function
 import numpy as np
 import tf
 import rospy
+import math
 
 import geometry as geom
 
@@ -49,6 +50,8 @@ class PID(object):
         self.integral = 0
         self.last_update = None
         self.last_error = None
+        self.last_derivative = None
+        self._fCut = 20
     
     def reset(self):
         self.integral = 0
@@ -59,9 +62,25 @@ class PID(object):
         current_time_s = rospy.get_time()
         dt = current_time_s - self.last_update if self.last_update is not None else None
 
+        #reset I of dt > 1s
+        if(dt is not None and dt > 1):
+            self.integral = 0
+            last_derrivative = None
+
         proportional = self.kP*error
-        if dt is not None: self.integral +=  dt*self.kI*error 
-        derivative = self.kD*(error - self.last_error) / dt if dt is not None else 0
+        if dt is not None and dt < 1: self.integral +=  dt*self.kI*error 
+
+        if dt is not None and self.last_error is not None:
+            derivative = self.kD*(error - self.last_error) / dt
+
+            # discrete low pass filter, cuts out the
+            # high frequency noise that can drive the controller crazy
+            RC = 1/(2*math.pi*self._fCut)
+            derivative = self.last_derivative + ((dt / (RC + dt))*(derivative - self.last_derivative))
+        else:
+            derivative = 0
+        self.last_derivative = derivative
+
 
         #prevent integral windup
         if self.max_output is not None:
@@ -138,14 +157,14 @@ class Lolo(object):
 
         #Pid controllers
         self.depth_PID = PID(0.1,0,0, np.radians(20)) # max 20 deg pitch
-        self.speed_PID = PID(10,0,0, 1000) #1000 RPM max output
+        self.speed_PID = PID(10,0,0, 300) #300 RPM max output
         self.pitch_PID = PID(1,0.1,0, np.radians(2)) #Max 10 deg/s pitch
-        self.roll_PID = PID(0.1,0,0, np.radians(30))   #Max 10 deg/s roll
-        self.yaw_PID = PID(2,0,0, np.radians(5))  #Max 10 deg/s yaw
+        self.roll_PID = PID(1,0,0, np.radians(5))   #Max 5 deg/s roll
+        self.yaw_PID = PID(2,0,0, np.radians(5))  #Max 5 deg/s yaw
 
         #Rate PIDs not used at the moment. 
         self.pitch_rate_PID = PID(2,0,0, np.radians(30))  #max 30 deg elevator angle
-        self.roll_rate_PID = PID(1,0,0, np.radians(30))  #max 30 deg elevon angle
+        self.roll_rate_PID = PID(2,0,0, np.radians(30))  #max 30 deg elevon angle
         self.yaw_rate_PID = PID(2,0.1,0, np.radians(30)) #max 30 deg rudder angle
 
     def _reset_desires(self):
