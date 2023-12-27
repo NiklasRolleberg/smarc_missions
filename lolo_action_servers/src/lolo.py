@@ -40,80 +40,18 @@ class SimpleRPMGoal(object):
     def pos(self):
         return np.array([self.x, self.y, self.depth])
 
-class PID(object):
-
-    def __init__(self,kP=None,kI=None,kD=None,max_output = None):
-        self.kP = kP if kP is not None else 0
-        self.kI = kI if kI is not None else 0
-        self.kD = kD if kD is not None else 0
-        self.max_output = max_output
-        self.integral = 0
-        self.last_update = None
-        self.last_error = None
-        self.last_derivative = None
-        self._fCut = 20
-    
-    def reset(self):
-        self.integral = 0
-        self.last_update = None
-        self.last_meassurement = None
-
-    def update_error(self, error):
-        current_time_s = rospy.get_time()
-        dt = current_time_s - self.last_update if self.last_update is not None else None
-
-        #reset I of dt > 1s
-        if(dt is not None and dt > 1):
-            self.integral = 0
-            last_derrivative = None
-
-        proportional = self.kP*error
-        if dt is not None and dt < 1: self.integral +=  dt*self.kI*error 
-
-        if dt is not None and self.last_error is not None:
-            derivative = self.kD*(error - self.last_error) / dt
-
-            # discrete low pass filter, cuts out the
-            # high frequency noise that can drive the controller crazy
-            RC = 1/(2*math.pi*self._fCut)
-            derivative = self.last_derivative + ((dt / (RC + dt))*(derivative - self.last_derivative))
-        else:
-            derivative = 0
-        self.last_derivative = derivative
-
-
-        #prevent integral windup
-        if self.max_output is not None:
-            if(self.integral > self.max_output): self.integral = self.max_output
-            if(self.integral < -self.max_output): self.integral = -self.max_output
-
-        output = proportional + self.integral + derivative
-
-        self.last_update = current_time_s
-        self.last_error = error
-
-        return max(-self.max_output, min(self.max_output, output)) if self.max_output is not None else output
-    
-    def update(self, meassurement, setpoint):
-        error = setpoint - meassurement
-        return self.update_error(error)
-
-
-
 class Lolo(object):
     IDLE = "IDLE"
     DRIVE = "DRIVE"
 
     def __init__(self,
-                 max_rpm = 100,
-                 useless_rudder_depth = 0.8):
+                 max_rpm = 100):
         """
         A container object that abstracts away ros-related stuff for a nice abstract vehicle
         pose is in NED, x = north, y = east, z = down/depth
         """
 
         self.max_rpm = max_rpm
-        self.useless_rudder_depth = useless_rudder_depth
 
         self.goal = None
         self.target_altitude = None
@@ -138,13 +76,16 @@ class Lolo(object):
         self.desired_yaw = 0
         self.desired_pitch = 0
         self.desired_roll = 0
-        self.desired_yawRate = 0
-        self.desired_pitchRate = 0
-        self.desired_rollRate = 0
+        
+        self.yaw_updated = False
+        self.roll_updated = False
+        self.depth_updated = False
+        self.speed_updated = False
 
         #Vehicle actuator vaues
         self.thruster_rpms = np.zeros(2)
         self.desired_rpms = np.zeros(2)
+        self.desired_rpm = 0
 
         self.elevon_angles = np.zeros(2)
         self.desired_elevon_angles = np.zeros(2)
@@ -155,42 +96,9 @@ class Lolo(object):
         self.elevator_angle = 0
         self.desired_elevator_angle = 0
 
-        #Pid controllers
-        self.depth_PID = PID(0.1,0,0, np.radians(20)) # max 20 deg pitch
-        self.speed_PID = PID(10,0,0, 300) #300 RPM max output
-        self.pitch_PID = PID(0.5,0.1,0, np.radians(10)) #Max 10 deg/s pitch
-        self.roll_PID = PID(2,0,0, np.radians(5))   #Max 5 deg/s roll
-        self.yaw_PID = PID(2,0,0, np.radians(5))  #Max 5 deg/s yaw
-
-        #Rate PIDs not used at the moment. 
-        self.pitch_rate_PID = PID(1,0.1,0.5, np.radians(30))  #max 30 deg elevator angle
-        self.roll_rate_PID = PID(2,0,0, np.radians(30))  #max 30 deg elevon angle
-        self.yaw_rate_PID = PID(2,0,0, np.radians(30)) #max 30 deg rudder angle
-
     def _reset_desires(self):
-        print("Reset setpoints to 0 and reset controllers")
-        self.desired_yaw = 0
-        self.desired_pitch = 0
-        self.desired_roll = 0
-        self.desired_yawRate = 0
-        self.desired_pitchRate = 0
-        self.desired_rollRate = 0
-        self.desired_elevator_angle = 0
-        self.desired_rudder_angle = 0
-        self.desired_elevon_angles[0] = 0
-        self.desired_elevon_angles[1] = 0
-        self.desired_rpms[0] = 0
-        self.desired_rpms[1] = 0
-
-        #Reset PID since mode changed. Is this needed?
-        self.depth_PID.reset()
-        self.speed_PID.reset()
-        self.pitch_PID.reset()
-        self.roll_PID.reset()
-        self.yaw_PID.reset()
-        self.pitch_rate_PID.reset()
-        self.roll_rate_PID.reset()
-        self.yaw_rate_PID.reset()
+        #print("Reset setpoints to 0 and reset controllers")
+        print("_reset_desires no longer used")
 
     def _change_mode(self, new_mode):
         if new_mode == self.control_mode:
@@ -225,102 +133,39 @@ class Lolo(object):
 
         if self.control_mode == Lolo.DRIVE:
             #High level
+            #set yaw setpoint
             self.control_wp()
-            self.control_depth()
+
+            #set RPM / surge setpoint
             self.control_speed()
-            #Low level
-            self.control_pitch()
+
+            #set roll setpoint
             self.control_roll()
-            self.control_yaw()
-            self.control_pitchRate()
-            self.control_rollRate()
-            self.control_yawRate()
+
+            #set depth+altutude setpoint (only depth for now)
+            self.control_depth()
             return
     
-    #High level
+    #High level Control
     def control_wp(self):
         #set setpoint for yaw
         self.desired_yaw = np.arctan2(self.position_error[1], self.position_error[0])
-        #self.desired_depth = 
-        
-        #self.desired_yaw = geom.vec2_directed_angle(self.yaw_vec, np.array([np,cos(self.desired_yaw) , np.sin(self.desired_yaw)]))
-        #print("desired yaw: " + str(np.rad2deg(self.desired_yaw)) +  " current yaw: " + str(np.rad2deg(self.yaw)))
-        
+        self.yaw_updated = True
 
     def control_depth(self):
         #set setpoint for pitch based on depth setpoint or altitude
-        desired_depth = self.goal.depth
-        if(self.target_altitude is not None): #We have a target altitude
-            altitude_target_depth = self.depth + 10 #Default value if no seafloor is detected
-            if self.altitude is not None:
-                total_depth = self.depth +self.altitude
-                altitude_target_depth = total_depth - self.target_altitude
-            desired_depth = min(self.goal.depth, altitude_target_depth)
-            print("Altitude control!")
-            if self.altitude is not None : print("total depth : " + str(self.depth +self.altitude))
-            print("target altitude: " + str(self.target_altitude))
-            print("current altitude: " + str(self.altitude))
-            print("max depth: " + str(self.goal.depth))
-
-        self.desired_pitch = self.depth_PID.update(self.depth, desired_depth)
-        print("desired depth : " + str(desired_depth))
-        print("current depth : " + str(self.depth))
-        print("desired pitch : " + str(np.rad2deg(self.desired_pitch)))
+        self.desired_depth = self.goal.depth
+        self.depth_updated = True
 
     def control_speed(self):
         #set setpoints for RPM based on speed setpoint
-        self.desired_rpms[0] = self.goal.rpm
-        self.desired_rpms[1] = self.goal.rpm
-
-    #low level level
-    def control_pitch(self):
-        #set setpoint for pitchrate
-        self.desired_pitchRate = self.pitch_PID.update(self.pitch, self.desired_pitch)
-        print("\tdesired pitch : " + str(np.rad2deg(self.desired_pitch)))
-        print("\tcurrent pitch : " + str(np.rad2deg(self.pitch)))
-        print("\tdesired pitchrate angle : " + str(np.rad2deg(self.desired_pitchRate)))
+        self.desired_rpm = self.goal.rpm
+        self.speed_updated = True
 
     def control_roll(self):
         #set setpoint for rollrate
         self.desired_roll = 0 #Hard coded for now
-        self.desired_rollRate = self.roll_PID.update(self.roll, self.desired_roll)
-
-    def control_yaw(self):
-        #set setpoint for yawrate
-        yaw_diff = geom.vec2_directed_angle(self.yaw_vec, np.array([np.cos(self.desired_yaw) , np.sin(self.desired_yaw)]))
-        self.desired_yawRate = self.yaw_PID.update_error(yaw_diff)
-        #print("Desired Yaw: " + str(np.rad2deg(self.desired_yaw)))
-        #print("current Yaw: " + str(np.rad2deg(self.yaw)))
-        #print("Yaw diff: " + str(np.rad2deg(yaw_diff)))
-        #print("Desired rudder angle: " + str(np.rad2deg(self.desired_yawRate)))
-
-    def control_pitchRate(self):
-        #set setpoint for elevator and elevons
-        self.desired_elevator_angle = -self.pitch_rate_PID.update(self.pitchRate, self.desired_pitchRate)
-        print("\t\tdesired pitchRate : " + str(np.rad2deg(self.desired_pitchRate)))
-        print("\t\tcurrent pitchRate : " + str(np.rad2deg(self.pitchRate)))
-        print("\t\tdesired elevator angle : " + str(np.rad2deg(self.desired_elevator_angle)))
-
-    def control_rollRate(self):
-        #set setpoint for elevons
-        actuation = self.roll_rate_PID.update(self.rollRate, self.desired_rollRate)
-        self.desired_elevon_angles[0] = -actuation #+ self.desired_elevator_angle
-        self.desired_elevon_angles[1] = actuation #+ self.desired_elevator_angle
-
-    def control_yawRate(self):
-        #set setpoint for rudders (and thrusters based on speed)
-        self.desired_rudder_angle = -self.yaw_rate_PID.update(self.yawRate, self.desired_yawRate)
-
-        rpm_fade_out = max(0, 0.8 - abs(self.vx)) if self.depth > 1 else 1
-        rpm_actuation = max(-500, min( 500, 1000*self.desired_rudder_angle)) * rpm_fade_out
-        self.desired_rpms[0] += rpm_actuation
-        self.desired_rpms[1] -= rpm_actuation
-        #print("\t\tDesired yawrate: " + str(np.rad2deg(self.desired_yawRate)) + " deg/s")
-        #print("\t\tCurrent yawrate: " + str(np.rad2deg(self.yawRate)) + " deg/s")
-        #print("\t\tDesired rudder_angle = " + str(np.rad2deg(self.desired_rudder_angle)))
-        
-    
-    
+        self.roll_updated = True
 
 
     ###############################
@@ -339,7 +184,7 @@ class Lolo(object):
         if x is not None: self.pos_x = x
         if y is not None: self.pos_y = y
         if depth is not None: self.pos_depth = depth
-        print("\tlolo pos: (" + str(self.x) + ", " + str(self.y) + ")")
+        #print("\tlolo pos: (" + str(self.x) + ", " + str(self.y) + ")")
 
     def update_altitude(self, alt=None):
         if alt is not None and alt > 0: self.altitude = alt

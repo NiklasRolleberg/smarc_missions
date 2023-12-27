@@ -21,6 +21,7 @@ import rospy, tf
 
 from smarc_msgs.msg import ThrusterFeedback, ThrusterRPM
 from std_msgs.msg import Float32
+from std_msgs.msg import Float64
 from geometry_msgs.msg import Twist
 
 class ROSLolo(object):
@@ -52,34 +53,23 @@ class ROSLolo(object):
                 break
             except:
                 rospy.logwarn("Could not get tf between {} and {}, waiting until we do".format(self.reference_link, self.base_link))
+        
+        self.elevon_p_sub = rospy.Subscriber(robot_name+"/core/elevon_port_fb", Float32, self.elevon_p_cb, queue_size=1)
+        self.elevon_s_sub = rospy.Subscriber(robot_name+"/core/elevon_strb_fb", Float32, self.elevon_s_cb, queue_size=1)
+        self.rudder_sub = rospy.Subscriber(robot_name+"/core/rudder_fb", Float32, self.rudder_cb, queue_size=1)
+        self.elevator_sub = rospy.Subscriber(robot_name+"/core/elevator_fb", Float32, self.elevator_cb, queue_size=1)
+        
 
         self.twist_sub = rospy.Subscriber(robot_name+"/dr/twist", Twist, self.twist_cb, queue_size=1)
         self.altitude_sub = rospy.Subscriber(robot_name+"/dr/altitude", Float32, self.altitude_cb, queue_size=1)
 
-        self.control_thrusters = control_thrusters
-        if control_thrusters:
-            self.t1_sub = rospy.Subscriber(robot_name+"/core/thruster1_fb", ThrusterFeedback, self.t1_cb, queue_size=1)
-            self.t2_sub = rospy.Subscriber(robot_name+"/core/thruster2_fb", ThrusterFeedback, self.t2_cb, queue_size=1)
-            self.t1_pub = rospy.Publisher(robot_name+"/core/thruster1_cmd", ThrusterRPM, queue_size=1)
-            self.t2_pub = rospy.Publisher(robot_name+"/core/thruster2_cmd", ThrusterRPM, queue_size=1)
+        self.t1_sub = rospy.Subscriber(robot_name+"/core/thruster1_fb", ThrusterFeedback, self.t1_cb, queue_size=1)
+        self.t2_sub = rospy.Subscriber(robot_name+"/core/thruster2_fb", ThrusterFeedback, self.t2_cb, queue_size=1)
 
-        self.control_elevons = control_elevons
-        if control_elevons:
-            self.elevon_p_sub = rospy.Subscriber(robot_name+"/core/elevon_port_fb", Float32, self.elevon_p_cb, queue_size=1)
-            self.elevon_s_sub = rospy.Subscriber(robot_name+"/core/elevon_strb_fb", Float32, self.elevon_s_cb, queue_size=1)
-            self.elevon_p_pub = rospy.Publisher(robot_name+"/core/elevon_port_cmd", Float32, queue_size=1)
-            self.elevon_s_pub = rospy.Publisher(robot_name+"/core/elevon_strb_cmd", Float32, queue_size=1)
-
-        self.control_rudder = control_rudder
-        if control_rudder:
-            self.rudder_sub = rospy.Subscriber(robot_name+"/core/rudder_fb", Float32, self.rudder_cb, queue_size=1)
-            self.rudder_pub = rospy.Publisher(robot_name+"/core/rudder_cmd", Float32, queue_size=1)
-
-        self.control_elevator = control_elevator
-        if control_elevator:
-            self.elevator_sub = rospy.Subscriber(robot_name+"/core/elevator_fb", Float32, self.elevator_cb, queue_size=1)
-            self.elevator_pub = rospy.Publisher(robot_name+"/core/elevator_cmd", Float32, queue_size=1)
-
+        self.thruster_setpoint_pub = rospy.Publisher(robot_name+"/ctrl/rpm_actuation",Float64, queue_size=1)
+        self.yaw_setpoint_pub = rospy.Publisher(robot_name+"/ctrl/yaw_setpoint",Float64, queue_size=1)
+        self.roll_setpoint_pub = rospy.Publisher(robot_name+"/ctrl/roll_setpoint",Float64, queue_size=1)
+        self.depth_setpoint_pub = rospy.Publisher(robot_name+"/ctrl/depth_setpoint",Float64, queue_size=1)
 
 
     def stop(self):
@@ -110,23 +100,21 @@ class ROSLolo(object):
     def update(self, timer_event=None):
         self.update_tf()
 
-        if self.control_thrusters:
-            t1m = min(self.max_rpm, abs(self.lolo.desired_rpms[0]))
-            t2m = min(self.max_rpm, abs(self.lolo.desired_rpms[1]))
-            t1 = int(np.sign(self.lolo.desired_rpms[0]) * t1m)
-            t2 = int(np.sign(self.lolo.desired_rpms[1]) * t2m)
-            self.t1_pub.publish(t1)
-            self.t2_pub.publish(t2)
+        if self.lolo.speed_updated:
+            self.thruster_setpoint_pub.publish(self.lolo.desired_rpm)
+            self.lolo.speed_updated = False
         
-        if self.control_elevons:
-            self.elevon_p_pub.publish(self.lolo.desired_elevon_angles[0])
-            self.elevon_s_pub.publish(self.lolo.desired_elevon_angles[1])
+        if self.lolo.roll_updated:
+            self.roll_setpoint_pub.publish(self.lolo.desired_roll)
+            self.lolo.roll_updated = False
 
-        if self.control_rudder:
-            self.rudder_pub.publish(self.lolo.desired_rudder_angle)
+        if self.lolo.yaw_updated:
+            self.yaw_setpoint_pub.publish(self.lolo.desired_yaw)
+            self.lolo.yaw_updated = False
 
-        if self.control_elevator:
-            self.elevator_pub.publish(self.lolo.desired_elevator_angle)
+        if self.lolo.depth_updated:
+            self.depth_setpoint_pub.publish(self.lolo.desired_depth)
+            self.lolo.depth_updated = False
     
     def twist_cb(self, msg):
         self.lolo.update_angular_vel(pitchrate=msg.angular.y, yawrate=msg.angular.z, rollrate=msg.angular.x)

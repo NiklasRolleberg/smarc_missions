@@ -40,8 +40,7 @@ class LoloGotoWP(object):
     def __init__(self):
 
         # see launch/config.yaml
-        self.lolo = Lolo(max_rpm = get_param("max_rpm", 500),
-                         useless_rudder_depth = get_param("useless_rudder_depth", 0.8))
+        self.lolo = Lolo(max_rpm = get_param("max_rpm", 500))
 
         self.ros_lolo = ROSLolo(lolo = self.lolo,
                                 robot_name = get_param("robot_name", "lolo"),
