@@ -153,8 +153,9 @@ class Lolo(object):
         self.yaw_updated = True
 
     def control_depth(self):
-        #set setpoint for pitch based on depth setpoint or altitude
-        self.desired_depth = self.goal.depth
+        #set setpoint for depth based on depth setpoint or altitude
+        target_depth = min(self.goal.depth, (self.depth+self.altitude) - self.target_altitude) if self.target_altitude is not None and self.altitude is not None else self.goal.depth
+        self.desired_depth = target_depth
         self.depth_updated = True
 
     def control_speed(self):

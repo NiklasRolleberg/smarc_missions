@@ -5,6 +5,7 @@ import rospy
 # Brings in the SimpleActionClient
 import actionlib
 from smarc_bt.msg import GotoWaypointAction, GotoWaypointGoal, GotoWaypoint, MissionControl
+from random import random
 
 class Actionserver_tester(object):
 
@@ -64,10 +65,19 @@ if __name__ == '__main__':
     # min: 
 
     at = Actionserver_tester()
-    at.gotoWP(x=330,y=700,depth=0.5,altitude=5,RPM=200)
-    at.gotoWP(x=120,y=220,depth=10,altitude=5,RPM=200)
-    at.gotoWP(x=100,y=200,depth=10,altitude=5,RPM=200)
+    #at.gotoWP(x=330,y=700,depth=0.5,altitude=5,RPM=200)
+    #res = at.gotoWP(x=120,y=220,depth=10,altitude=5,RPM=200)
+    #print(res)
+    #res = at.gotoWP(x=100,y=200,depth=10,altitude=5,RPM=200)
+    #print(res)
 
+    #at.gotoWP(x=120,y=700,depth=5,altitude=5,RPM=250)
+
+    for i in range(200):
+        x = 120 + 100*(random()-0.5)
+        y = 700 + 200*(random()-0.5)
+        depth = 5+2*random()
+        at.gotoWP(x,y,depth=5,altitude=5,RPM=250)
     
 
     

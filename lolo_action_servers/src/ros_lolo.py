@@ -30,10 +30,6 @@ class ROSLolo(object):
                  robot_name="lolo",
                  reference_link = "map", #utm
                  update_freq = 10,
-                 control_thrusters=True,
-                 control_elevons=True,
-                 control_rudder=True,
-                 control_elevator=True,
                  max_rpm = 500):
         """
         Reads the state of a lolo from ROS topics and updates the given lolo object
@@ -140,9 +136,3 @@ class ROSLolo(object):
 
     def elevator_cb(self, msg):
         self.lolo.update_elevator_angle(msg.data)
-
-
-
-
-
-
