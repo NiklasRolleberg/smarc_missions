@@ -30,3 +30,6 @@ float64 arrival_heading
 bool use_heading
 
 string name
+
+#Vehicle mode. Vehicle specific
+string vehicle_mode
