@@ -9,6 +9,7 @@ import rospy
 import py_trees as pt
 import tf
 import numpy as np
+import time
 
 import bb_enums
 
@@ -90,11 +91,12 @@ class C_DepthOK(pt.behaviour.Behaviour):
     def update(self):
         self.max_depth = self.bb.get(bb_enums.MAX_DEPTH)
         depth = self.vehicle.depth
-
-        if depth is None:
-            rospy.logwarn_throttle(5, "NO DEPTH READ! Success anyways")
+        time_since_last_update = time.time() - self.vehicle.last_update_depth
+        #print("last depth update: " + str(time_since_last_update))
+        if depth is None or time_since_last_update > 10:
+            rospy.logwarn_throttle(5, "NO DEPTH READ! Depth is very important. FAILURE")
             self.feedback_message = "Last read:None, max:{m:.2f}".format(l=depth, m=self.max_depth)
-            return pt.Status.SUCCESS
+            return pt.Status.FAILURE
         else:
             self.feedback_message = "Last read:{l:.2f}, max:{m:.2f}".format(l=depth, m=self.max_depth)
 
@@ -103,7 +105,6 @@ class C_DepthOK(pt.behaviour.Behaviour):
         else:
             rospy.logwarn_throttle(5, "Too deep!"+str(depth))
             return pt.Status.FAILURE
-
 
 
 class C_AltOK(pt.behaviour.Behaviour):
@@ -116,7 +117,9 @@ class C_AltOK(pt.behaviour.Behaviour):
     def update(self):
         self.min_alt = self.bb.get(bb_enums.MIN_ALTITUDE)
         alt = self.vehicle.altitude
-        if alt is None:
+        time_since_last_update = time.time() - self.vehicle.last_update_altitude
+
+        if alt is None or time_since_last_update > 10:
             rospy.logwarn_throttle(10, "NO ALTITUDE READ! The tree will run anyways")
             self.feedback_message = "Last read:None, min:{m:.2f}".format(m=self.min_alt)
             return pt.Status.SUCCESS
