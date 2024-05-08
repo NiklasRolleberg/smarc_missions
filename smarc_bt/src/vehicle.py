@@ -102,6 +102,7 @@ class Vehicle(object):
         self._depth_sub = rospy.Subscriber(self.auv_config.DEPTH_TOPIC, Float64, self._depth_cb, queue_size=2)
         self._status_str_depth = "Uninitialized"
         self.last_update_depth = -1
+        self.last_time_at_surface = -1
 
         # Altitude
         self.altitude = None
@@ -310,6 +311,8 @@ class Vehicle(object):
     def _depth_cb(self, msg: float) -> None:
         self.depth = msg.data
         self.last_update_depth = time.time()
+        if(self.depth < 1): #We are at the surface
+            self.last_time_at_surface = time.time()
         self._status_str_depth = "Working"
         self._animation.update(1)
 

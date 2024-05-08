@@ -130,7 +130,7 @@ class LoloGotoWP(object):
 
         tolerance = wp.goal_tolerance
         if tolerance < 2:
-            rospy.logwarn("Goal tolerance is too small, lolo is not a surgeon! Setting to 0.5m")
+            rospy.logwarn("Goal tolerance is too small, lolo is not a surgeon! Setting to 2m")
             tolerance = 2
 
         # set internal goal from message params

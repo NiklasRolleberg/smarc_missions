@@ -72,12 +72,15 @@ class ROSLolo(object):
         rospy.loginfo("Stopping lolo controller")
         self.lolo.reset_goal()
         self.update()
-        self.timer.shutdown()
+        self.control_timer.shutdown()
+        self.state_timer.shutdown()
+        self.setState() #Go back to sensor state off
 
 
     def start(self):
         rospy.loginfo("Starting lolo controller")
-        self.timer = rospy.Timer(rospy.Duration(1/self.update_freq), self.update)
+        self.control_timer = rospy.Timer(rospy.Duration(1/self.update_freq), self.update)
+        self.state_timer = rospy.Timer(rospy.Duration(2), self.update)
 
 
     def update_tf(self):
@@ -136,3 +139,9 @@ class ROSLolo(object):
 
     def elevator_cb(self, msg):
         self.lolo.update_elevator_angle(msg.data)
+
+    def setState(self, state = ""):
+        #TODO figure out this later
+        pass
+
+

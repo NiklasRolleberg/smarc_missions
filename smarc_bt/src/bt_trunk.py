@@ -30,6 +30,7 @@ from reconfig_server import ReconfigServer
 # tree leaves
 
 from bt_conditions import C_DepthOK, \
+                          C_DiveTimeOK, \
                           C_NoAbortReceived, \
                           C_AltOK, \
                           C_LeakOK, \
@@ -161,6 +162,7 @@ def const_tree(auv_config):
                             C_NoAbortReceived(),
                             C_AltOK(),
                             C_DepthOK(),
+                            C_DiveTimeOK(),
                             C_LeakOK(),
                             C_TimeoutNotReached()
                         ])

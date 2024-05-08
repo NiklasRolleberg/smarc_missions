@@ -80,6 +80,36 @@ class C_LeakOK(pt.behaviour.Behaviour):
             return pt.Status.SUCCESS
 
 
+class C_DiveTimeOK(pt.behaviour.Behaviour):
+    def __init__(self):
+        self.bb = pt.blackboard.Blackboard()
+        self.vehicle = self.bb.get(bb_enums.VEHICLE_STATE)
+        
+        self.max_diveTime = self.bb.get(bb_enums.MAX_DIVETIME)
+        self.max_diveTime = self.vehicle.auv_config.MAX_DIVETIME
+
+        super(C_DiveTimeOK, self).__init__(name="C_DiveTimeOK")
+
+
+    def update(self):
+        #self.max_diveTime = self.bb.get(bb_enums.MAX_DIVETIME)
+        print("max divetime: " + str(self.max_diveTime))
+        time_since_dive = time.time() - self.vehicle.last_time_at_surface
+        #print("last depth update: " + str(time_since_last_update))
+        if time_since_dive == -1:
+            rospy.logwarn_throttle(5, "STARTED BT UNDERWATER. NOT GOOD. Success anyway")
+            self.feedback_message = "Last read:None"
+            return pt.Status.SUCCESS
+        else:
+            self.feedback_message = "Diving time: "+ str(time_since_dive)
+
+        if time_since_dive < self.max_diveTime:
+            return pt.Status.SUCCESS
+        else:
+            rospy.logwarn_throttle(5, "Too long of a dive! "+str(time_since_dive) + "s")
+            return pt.Status.FAILURE
+
+
 class C_DepthOK(pt.behaviour.Behaviour):
     def __init__(self):
         self.bb = pt.blackboard.Blackboard()

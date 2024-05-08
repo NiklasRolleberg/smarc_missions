@@ -56,6 +56,9 @@ class Lolo(object):
         self.goal = None
         self.target_altitude = None
         self.control_mode = Lolo.IDLE
+        
+        #String that tells lolo what sensors to use
+        self.vehicle_mode = ""
 
         #Vehicle state values
         self.pos_x = 0

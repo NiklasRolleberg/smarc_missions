@@ -9,6 +9,7 @@ VEHICLE_STATE = 'vehicle_state'
 ABORT = 'abort'
 MAX_DEPTH = 'max_depth'
 MIN_ALTITUDE = 'min_altitude'
+MAX_DIVETIME = 'max_divetime'
 
 MISSION_PLAN_OBJ = 'misison_plan'
 MANEUVER_ACTIONS = 'maneuver_actions'
