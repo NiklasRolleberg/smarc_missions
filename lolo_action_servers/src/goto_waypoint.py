@@ -105,6 +105,7 @@ class LoloGotoWP(object):
         self.on_new_goal()
         # first, extract the position from the goal
         # and convert that to whatever reference frame the lolo model is in
+        goal.waypoint.pose.header.stamp = rospy.Time.now()
         wp = goal.waypoint
         goal_pose_stamped = self.tf_listener.transformPose(target_frame = self.ros_lolo.reference_link,
                                                            ps = wp.pose)

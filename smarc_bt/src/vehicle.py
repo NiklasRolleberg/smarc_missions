@@ -96,6 +96,8 @@ class Vehicle(object):
         self._vbs_sub = rospy.Subscriber(self.auv_config.VBS_TOPIC, PercentStamped, self._vbs_cb, queue_size=2)
         self._lcg_sub = rospy.Subscriber(self.auv_config.LCG_TOPIC, PercentStamped, self._lcg_cb, queue_size=2)
         '''
+        self.lcg = None
+        self.vbs = None
 
         #Depth
         self.depth = None
