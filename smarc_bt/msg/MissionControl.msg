@@ -41,3 +41,5 @@ string feedback_str
 # if the cmd is set plan, then this should contain the waypoints
 # to follow, otherwise ignored
 smarc_bt/GotoWaypoint[] waypoints
+
+smarc_bt/Maneuver[] maneuvers

@@ -64,6 +64,7 @@ add_message_files(
   FILES
   GotoWaypoint.msg
   MissionControl.msg
+  Maneuver.msg
   BTCommand.msg	
 )
 

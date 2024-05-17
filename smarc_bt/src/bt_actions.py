@@ -55,15 +55,15 @@ class A_AbortPlan(pt.behaviour.Behaviour):
 
 
 
-class A_ReadWaypoint(pt.behaviour.Behaviour):
+class A_ReadManeuver(pt.behaviour.Behaviour):
     def __init__(self,
                  ps_topic,
                  bb_key,
                  reset = False):
         """
-        subs to a GotoWaypoint topic and read it into the given bb variable
+        subs to a maneuver topic and read it into the given bb variable
         """
-        super(A_ReadWaypoint, self).__init__(name="A_ReadWaypoint")
+        super(A_ReadManeuver, self).__init__(name="A_ReadWaypoint")
 
         self.bb = pt.blackboard.Blackboard()
         self.ps_topic = ps_topic

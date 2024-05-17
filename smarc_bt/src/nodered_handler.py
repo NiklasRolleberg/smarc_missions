@@ -227,24 +227,9 @@ class NoderedHandler(object):
             self._publish_fb_dict(fb)
 
         if cmd == "plan_dubins":
-            try:
-                turning_radius = float(arg)
-            except:
-                fb = {"result":"Turning radius was bad: {}".format(arg)}
-                self._publish_fb_dict(fb)
-                return
-
-            mplan = self._bb.get(bb_enums.MISSION_PLAN_OBJ)
-            if mplan is None:
-                fb = {"result":"Mission plan was None"}
-                self._publish_fb_dict(fb)
-                return
-
-            mplan.generate_dubins(turning_radius=turning_radius)
-            fb = {"result":"Mission plan is dubins"}
+            fb = {"result":"Dubins are not available right now"}
             self._publish_fb_dict(fb)
-            self._publish_current_plan()
-
+            return
 
 
 

@@ -48,7 +48,7 @@ from bt_common import Sequence, \
 from bt_actions import A_GotoWaypoint, \
                        A_SetNextPlanAction, \
                        A_PublishFinalize, \
-                       A_ReadWaypoint, \
+                       A_ReadManeuver, \
                        A_AbortPlan
 
 
@@ -97,38 +97,7 @@ def const_tree(auv_config):
          # max_period = None,
          # allow_silence = True -> If false, will fail if no message is received ever
 
-
-        read_reloc_enable = ReadTopic(
-            name = "A_ReadLiveWPEnable",
-            topic_name = auv_config.LIVE_WP_ENABLE_TOPIC,
-            topic_type = Bool,
-            blackboard_variables={bb_enums.LIVE_WP_ENABLE : 'data'}
-        )
-
-        read_gui_enable = ReadTopic(
-            name = "A_ReadGUIEnable",
-            topic_name = auv_config.GUI_WP_ENABLE_TOPIC,
-            topic_type = Bool,
-            blackboard_variables={bb_enums.GUI_WP_ENABLE : 'data'}
-        )
-
-        read_algae_follow_enable = ReadTopic(
-            name = "A_ReadAlgaeEnable",
-            topic_name = auv_config.ALGAE_FOLLOW_ENABLE_TOPIC,
-            topic_type = Bool,
-            blackboard_variables={bb_enums.ALGAE_FOLLOW_ENABLE: 'data'}
-        )
-
-
-        read_reloc_wp = A_ReadWaypoint(
-            ps_topic = auv_config.LIVE_WP,
-            bb_key = bb_enums.LIVE_WP)
-
-        read_algae_follow_wp = A_ReadWaypoint(
-            ps_topic = auv_config.ALGAE_FOLLOW_WP,
-            bb_key = bb_enums.ALGAE_FOLLOW_WP)
-
-        read_gui_wp = A_ReadWaypoint(
+        read_mission = A_ReadManeuver(
             ps_topic = auv_config.GUI_WP,
             bb_key = bb_enums.GUI_WP)
 
@@ -143,14 +112,8 @@ def const_tree(auv_config):
                         children=[
                             publish_heartbeat,
                             read_abort,
-                            read_reloc_enable,
-                            read_reloc_wp,
-                            read_gui_enable,
-                            read_gui_wp,
-                            read_algae_follow_enable,
-                            read_algae_follow_wp
+                            read_mission,
                         ])
-
 
 
 
