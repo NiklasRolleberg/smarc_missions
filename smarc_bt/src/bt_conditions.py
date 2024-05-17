@@ -96,8 +96,9 @@ class C_DiveTimeOK(pt.behaviour.Behaviour):
         #print("max divetime: " + str(self.max_diveTime))
         time_since_dive = time.time() - self.vehicle.last_time_at_surface
         time_since_last_update = time.time() - self.vehicle.last_update_depth
-        print("time since dive " + str(time_since_dive))
-        print("last depth update: " + str(time_since_last_update))
+        #print("time since dive " + str(time_since_dive))
+        #print("last depth update: " + str(time_since_last_update))
+        rospy.logwarn_throttle(5, "Divetime: " + str(time_since_dive))
         if time_since_dive == -1:
             rospy.logwarn_throttle(5, "STARTED BT UNDERWATER. NOT GOOD. Success anyway")
             self.feedback_message = "Last read:None"
@@ -108,7 +109,7 @@ class C_DiveTimeOK(pt.behaviour.Behaviour):
         if time_since_dive < 60: #self.max_diveTime:
             return pt.Status.SUCCESS
         else:
-            rospy.logwarn_throttle(5, "Too long of a dive! "+str(time_since_dive) + "s")
+            rospy.logwarn_throttle(1, "Too long of a dive! "+str(time_since_dive) + "s")
             return pt.Status.FAILURE
 
 
