@@ -131,22 +131,155 @@ class A_SetNextPlanAction(pt.behaviour.Behaviour):
         return pt.Status.SUCCESS
 
 
-class A_ExecuteManeuver(ptr.actions.ActionClient):
+class A_ExecuteManeuver(pt.Sequence):
 
-    class WP_ActionServer(ptr.actions.ActionClient):
-        def __init__(self, node_name='wp_actionserver', action_namespace="/lolo/actions"):
+    #################################################################################################
+    class WP_ActionClient(ptr.actions.ActionClient):
+        def __init__(self, auv_config, vehicle, node_name='wp_actionclient', action_namespace="/lolo/actions"):
             self.node_name = node_name
             self.action_namespace = action_namespace
-        
+            self.vehicle = vehicle
 
+            # become action client
+            ptr.actions.ActionClient.__init__(self,
+                name = self.node_name,
+                action_spec = GotoWaypointAction,
+                action_goal = None,
+                action_namespace = action_namespace,
+                override_feedback_message_on_running = "Moving to waypoint"
+            )
+
+            self.action_goal_handle = None
+
+            self.server_feedback_msg = None
+            self.action_server_ok = False
+            self.goal_tf_frame = auv_config.UTM_LINK
+
+            # every X seconds, try to reconnect to the action server
+            # if the server wasnt up and ready when the BT was started
+            self.last_reconnect_attempt_time = 0
+            self.reconnect_attempt_period = 5
+
+        def setup(self, timeout):
+            """
+            Overwriting the normal ptr action setup to stop it from failiing the setup step
+            and instead handling this failure in the tree.
+            """
+            self.logger.debug("%s.setup()" % self.__class__.__name__)
+            self.action_client = actionlib.SimpleActionClient(
+                self.action_namespace,
+                self.action_spec
+            )
+
+            if not self.action_client.wait_for_server(rospy.Duration(timeout)):
+                self.logger.error("{0}.setup() could not connect to the action server at '{1}'".format(self.__class__.__name__, self.action_namespace))
+                self.action_client = None
+            else:
+                self.action_server_ok = True
+            return True
+        
+        def make_goal_from_wp(self, wp):
+            # construct the message
+            goal = GotoWaypointGoal()
+            goal.waypoint = wp.wp
+            return goal
+        
+        def feedback_cb(self, msg):
+            self.server_feedback_msg = msg
+
+        def send_goal(self):
+            self.server_feedback_msg = None
+            self.action_goal_handle = self.action_client.send_goal(self.action_goal, feedback_cb=self.feedback_cb)
+            self.sent_goal = True
+            #self.vehicle.last_goto_wp = self.action_goal.waypoint
+
+        def update(self):
+            """
+            Check only to see whether the underlying action server has
+            succeeded, is running, or has cancelled/aborted for some reason and
+            map these to the usual behaviour return states.
+            """
+
+            if not self.action_server_ok:
+                self.feedback_message = "Action Server not available!"
+                rospy.logerr_throttle_identical(5, self.feedback_message)
+                t = time.time()
+                diff = t - self.last_reconnect_attempt_time
+                if diff < self.reconnect_attempt_period:
+                    self.feedback_message = "Re-trying to connect in {}s".format(diff)
+                else:
+                    self.setup(self.reconnect_attempt_period-1)
+
+                return pt.Status.FAILURE
+
+            # if your action client is not valid
+            if not self.action_client:
+                self.feedback_message = "ActionClient is invalid! Client:"+str(self.action_client)
+                rospy.logerr(self.feedback_message)
+                return pt.Status.FAILURE
+
+            # if the action_goal is invalid
+            if not self.action_goal:
+                self.feedback_message = "No action_goal!"
+                rospy.logwarn(self.feedback_message)
+                return pt.Status.FAILURE
+
+            # if goal hasn't been sent yet
+            if not self.sent_goal:
+                self.send_goal()
+                rospy.loginfo("Sent goal to action server:"+str(self.action_goal))
+                self.feedback_message = "Goal sent"
+                return pt.Status.RUNNING
+
+            # if the goal was aborted or preempted
+            if self.action_client.get_state() in [actionlib_msgs.GoalStatus.ABORTED,
+                                                actionlib_msgs.GoalStatus.PREEMPTED]:
+                self.feedback_message = "Aborted goal"
+                rospy.loginfo(self.feedback_message)
+                return pt.Status.FAILURE
+
+            result = self.action_client.get_result()
+
+            # if the goal was accomplished
+            if result is not None and result.reached_waypoint:
+                self.feedback_message = "Completed goal"
+                rospy.loginfo(self.feedback_message)
+                return pt.Status.SUCCESS
+
+            # no live updates, just report distance to planned wp
+            # still running, set our feedback message to distance left
+            #current_loc = self.vehicle.position_utm
+            #mplan = self.bb.get(bb_enums.MISSION_PLAN_OBJ)
+            #if mplan is not None and current_loc is not None:
+            #    wp = mplan.get_current_wp()
+            #    x,y = current_loc
+            #    h_dist = math.sqrt( (x-wp.x)**2 + (y-wp.y)**2 )
+            #    v_dist = wp.depth - self.vehicle.depth
+            #    self.feedback_message = "HDist:{:.2f}, VDist:{:.2f} towards {}".format(h_dist, v_dist, wp.wp.name)
+            self.feedback_message = "Waypoint actionserver client feedback." + str(rospy.Time.now())
+
+            if self.server_feedback_msg is not None and self.server_feedback_msg.feedback_message != "":
+                self.feedback_message = "[S:{}]  [C:{}]".format(self.server_feedback_msg.feedback_message, self.feedback_message)
+
+            return pt.Status.RUNNING
+
+        def initialise(self, maneuver = None):
+            if(maneuver is None):
+                return
+            
+            self.action_goal = self.make_goal_from_wp(maneuver)
+            rospy.loginfo("Maneuver goal initialized:"+str(self.action_goal.waypoint.name))
+
+            # ensure that we still need to send the goal
+            self.sent_goal = False
+
+            
+    #################################################################################################
 
     def __init__(self,
                  auv_config,
-                 action_namespace = None,
-                 node_name = "A_ExecuteManeuver",
-                 wp_from_bb = None,
-                 live_mode_enabled = False,
-                 goalless = False):
+                 action_namespace_wp = None,
+                 node_name = "A_ExecuteManeuver"):
         """
         Runs an action server that will move the robot to the given waypoint
 
@@ -156,6 +289,8 @@ class A_ExecuteManeuver(ptr.actions.ActionClient):
         live_mode_enabled -> if True, the waypoint will be re-submitted every tick to the server, wp_from_bb must be given
         goalless -> if True, only an empty goal will be sent to the sever, useful as a "signal to start"
         """
+
+        super(A_ExecuteManeuver, self).__init__(name="A_ExcecuteManeuver")
 
         self.bb = pt.blackboard.Blackboard()
         self.vehicle = self.bb.get(bb_enums.VEHICLE_STATE)
@@ -168,133 +303,48 @@ class A_ExecuteManeuver(ptr.actions.ActionClient):
             list_of_maneuvers.append(self.node_name)
         self.bb.set(bb_enums.MANEUVER_ACTIONS, list_of_maneuvers)
 
-        self.action_goal_handle = None
+        
+        #Action namespaces
+        action_namespace_wp = auv_config.GOTO_ACTION_NAMESPACE
 
-        if action_namespace is None:
-            action_namespace = auv_config.GOTO_ACTION_NAMESPACE
 
-        # become action client
-        ptr.actions.ActionClient.__init__(
-            self,
-            name = self.node_name,
-            action_spec = GotoWaypointAction,
-            action_goal = None,
-            action_namespace = action_namespace,
-            override_feedback_message_on_running = "Moving to waypoint"
-        )
-        self.server_feedback_msg = None
+        #Create Action clients
+        self.wp_actionclient = self.WP_ActionClient(auv_config=auv_config, vehicle=self.vehicle, node_name="wp_actionclient", action_namespace=action_namespace_wp)
 
-        self.action_server_ok = False
-
-        self.goal_tf_frame = auv_config.UTM_LINK
-
-        # if given, the action will read a wp from the bb instead of
-        # from the mission plan
-        self.wp_from_bb = wp_from_bb
-
-        # If true, the action will re-send a goal every time it changes
-        # without stopping the action
-        self.live_mode_enabled = live_mode_enabled
-        self.last_live_update_time = -1
-
-        # every X seconds, try to reconnect to the action server
-        # if the server wasnt up and ready when the BT was started
-        self.last_reconnect_attempt_time = 0
-        self.reconnect_attempt_period = 5
-
-        # make sure there is a bb key given to get the wp from
-        # if live mode is needed
-        if self.live_mode_enabled and self.wp_from_bb is None:
-            assert False, "Live mode must be given a bb key to get the WP from!"
-
-        # if True, will not attempt to fill in a goal, will submit empty goal objects
-        self.goalless = goalless
-
+        self.add_child(self.wp_actionclient)
 
     def setup(self, timeout):
-        """
-        Overwriting the normal ptr action setup to stop it from failiing the setup step
-        and instead handling this failure in the tree.
-        """
-        self.logger.debug("%s.setup()" % self.__class__.__name__)
-        self.action_client = actionlib.SimpleActionClient(
-            self.action_namespace,
-            self.action_spec
-        )
-
-        if not self.action_client.wait_for_server(rospy.Duration(timeout)):
-            self.logger.error("{0}.setup() could not connect to the action server at '{1}'".format(self.__class__.__name__, self.action_namespace))
-            self.action_client = None
-        else:
-            self.action_server_ok = True
-
-        return True
-
-
-    def make_goal_from_wp(self, wp):
-        # construct the message
-        goal = GotoWaypointGoal()
-        goal.waypoint = wp.wp
-        return goal
-
-
-    def feedback_cb(self, msg):
-        self.server_feedback_msg = msg
-
-    def send_goal(self):
-        self.server_feedback_msg = None
-        self.action_goal_handle = self.action_client.send_goal(self.action_goal, feedback_cb=self.feedback_cb)
-        self.sent_goal = True
-        self.vehicle.last_goto_wp = self.action_goal.waypoint
+        return self.wp_actionclient.setup(timeout)
 
 
     def initialise(self):
-        if not self.action_server_ok:
-            self.feedback_message = "No action server found for {}!".format(self.action_namespace)
+
+        if not self.wp_actionclient.action_server_ok:
+            self.feedback_message = "No WP action server found for {}!".format(self.action_namespace)
             rospy.logwarn_throttle(5, self.feedback_message)
             return
 
-        # quick exit for the goalless version
-        if self.goalless:
-            self.feedback_message = "Goalless initialized"
-            self.action_goal = GotoWaypointGoal()
-            self.sent_goal = False
+        mission_plan = self.bb.get(bb_enums.MISSION_PLAN_OBJ)
+        
+        if mission_plan is None:
+            self.feedback_message = "No mission plan found!"
+            rospy.logwarn(self.feedback_message)
             return
 
-        # so we can pass a bb variable name to this action
-        # and it would go to that wp
-        if self.wp_from_bb is not None:
-            wp = self.bb.get(self.wp_from_bb)
-            rospy.loginfo_throttle_identical(5, "Acquired WP from the BB key:{}".format(self.wp_from_bb))
-        # otherwise default into following the mission plan
-        else:
-            mission_plan = self.bb.get(bb_enums.MISSION_PLAN_OBJ)
-            if mission_plan is None:
-                self.feedback_message = "No mission plan found!"
-                rospy.logwarn(self.feedback_message)
-                return
+        #Get current maneuver
+        maneuver = mission_plan.get_current_wp("GotoWaypointAction")
 
-            wp = mission_plan.get_current_wp("GotoWaypointAction")
-
-        if wp is None:
-            if self.wp_from_bb is None:
-                self.feedback_message = "No wp found to execute! Does the plan have any waypoints that we understand?"
-                rospy.loginfo_throttle(3, self.feedback_message)
-            else:
-                self.feedback_message = "Unplanned waypoint not found but it is enabled!"
-                rospy.loginfo_throttle(3, self.feedback_message)
+        if maneuver is None:
+            self.feedback_message = "Unplanned waypoint not found but it is enabled!"
+            rospy.loginfo_throttle(3, self.feedback_message)
             return
 
-        if wp.frame_id != self.goal_tf_frame:
-            self.feedback_message = 'The frame of the waypoint({0}) does not match the expected frame({1}) of the action client!'.format(wp.frame_id, self.goal_tf_frame)
-            rospy.logerr_throttle(5, self.feedback_message)
-            return
+        #if maneuver.frame_id != self.goal_tf_frame:
+        #    self.feedback_message = 'The frame of the waypoint({0}) does not match the expected frame({1}) of the action client!'.format(wp.frame_id, self.goal_tf_frame)
+        #    rospy.logerr_throttle(5, self.feedback_message)
+        #    return
 
-
-        self.action_goal = self.make_goal_from_wp(wp)
-        rospy.loginfo("Goto waypoint goal initialized:"+str(self.action_goal.waypoint.name))
-        # ensure that we still need to send the goal
-        self.sent_goal = False
+        self.wp_actionclient.initialise(maneuver)
 
 
 
@@ -306,7 +356,9 @@ class A_ExecuteManeuver(ptr.actions.ActionClient):
         map these to the usual behaviour return states.
         """
 
-        if not self.action_server_ok:
+        return self.wp_actionclient.update()
+
+        if not self.wp_actionclientaction_server_ok:
             self.feedback_message = "Action Server not available!"
             rospy.logerr_throttle_identical(5, self.feedback_message)
             t = time.time()
