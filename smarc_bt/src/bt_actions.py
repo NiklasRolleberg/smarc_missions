@@ -53,105 +53,6 @@ class A_AbortPlan(pt.behaviour.Behaviour):
         return pt.Status.SUCCESS
 
 
-
-
-class A_ReadManeuver(pt.behaviour.Behaviour):
-    def __init__(self,
-                 ps_topic,
-                 bb_key,
-                 reset = False):
-        """
-        subs to a maneuver topic and read it into the given bb variable
-        """
-        super(A_ReadManeuver, self).__init__(name="A_ReadWaypoint")
-
-        self.bb = pt.blackboard.Blackboard()
-        self.ps_topic = ps_topic
-        self.last_read_wp = None
-        self.last_read_time = None
-        self.bb_key = bb_key
-        self.got_utm_service = False
-        self.got_latlon_service = False
-        self.reset = reset
-
-
-    def setup(self, timeout):
-        self.ps_sub = rospy.Subscriber(self.ps_topic, GotoWaypoint, self.cb)
-        try:
-            rospy.loginfo("Waiting for utm to latlon service")
-            rospy.wait_for_service(self.bb.get(bb_enums.UTMTOLL_SERVICE_NAME), timeout=timeout)
-            self.got_utm_service = True
-        except:
-            rospy.logwarn("Could not connect to UTM->LL, live WPs wont be updated in the map")
-
-        try:
-            rospy.loginfo("Waiting for latlon to utm service")
-            rospy.wait_for_service(self.bb.get(bb_enums.LLTOUTM_SERVICE_NAME), timeout=timeout)
-            self.got_latlon_service = True
-        except:
-            rospy.logwarn("Could not connect to LL->UTM, we cant read WPs from a GUI")
-        return True
-
-    def cb(self, msg):
-        self.last_read_wp = msg
-        self.last_read_time = time.time()
-
-    def update(self):
-        if self.last_read_time is not None:
-            time_since = time.time() - self.last_read_time
-            self.feedback_message = "Last read:{:.2f}s ago".format(time_since)
-        else:
-            self.feedback_message = "No msg rcvd"
-
-        if self.last_read_wp is None:
-            return pt.Status.SUCCESS
-
-        wp = Waypoint(goto_waypoint = self.last_read_wp)
-
-
-        frame_id = self.last_read_wp.pose.header.frame_id
-
-        # given a latlon point, convert to utm for the controllers
-        if frame_id == "latlon":
-            if not self.got_latlon_service:
-                self.feedback_message = "Given a latlon point but got no service!"
-                return pt.Status.FAILURE
-            try:
-                serv = rospy.ServiceProxy(self.lat_lon_to_utm_service_name, LatLonToUTM)
-                wp.set_utm_from_latlon(serv)
-            except Exception as e:
-                print(e)
-                return pt.Status.FAILURE
-
-
-        # given a utm point, convert to latlon for any guis
-        if frame_id == 'utm':
-            if self.got_utm_service:
-                try:
-                    serv = rospy.ServiceProxy(self.utm_to_lat_lon_service_name, UTMToLatLon)
-                    wp.set_latlon_from_utm(serv)
-                except Exception as e:
-                    print(e)
-
-        wp.wp.pose.header.frame_id = 'utm'
-
-
-        if not wp.is_actionable:
-            self.feedback_message = "Empty wp!"
-            return pt.Status.SUCCESS
-
-
-        self.bb.set(self.bb_key, wp)
-
-
-        if self.reset:
-            self.last_read_wp = None
-            self.bb.set(self.bb_key, None)
-
-        return pt.Status.SUCCESS
-
-
-
 class A_PublishFinalize(pt.behaviour.Behaviour):
     def __init__(self, topic):
         super(A_PublishFinalize, self).__init__(name="A_PublishFinalize")
@@ -194,12 +95,6 @@ class A_PublishFinalize(pt.behaviour.Behaviour):
         return pt.Status.SUCCESS
 
 
-
-
-
-
-
-
 class A_SetNextPlanAction(pt.behaviour.Behaviour):
     def __init__(self, do_not_visit=False):
         """
@@ -236,13 +131,19 @@ class A_SetNextPlanAction(pt.behaviour.Behaviour):
         return pt.Status.SUCCESS
 
 
+class A_ExecuteManeuver(ptr.actions.ActionClient):
+
+    class WP_ActionServer(ptr.actions.ActionClient):
+        def __init__(self, node_name='wp_actionserver', action_namespace="/lolo/actions"):
+            self.node_name = node_name
+            self.action_namespace = action_namespace
+        
 
 
-class A_GotoWaypoint(ptr.actions.ActionClient):
     def __init__(self,
                  auv_config,
                  action_namespace = None,
-                 node_name = "A_GotoWaypoint",
+                 node_name = "A_ExecuteManeuver",
                  wp_from_bb = None,
                  live_mode_enabled = False,
                  goalless = False):

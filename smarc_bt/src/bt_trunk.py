@@ -45,10 +45,9 @@ from bt_common import Sequence, \
                       Counter, \
                       Not
 
-from bt_actions import A_GotoWaypoint, \
+from bt_actions import A_ExecuteManeuver, \
                        A_SetNextPlanAction, \
                        A_PublishFinalize, \
-                       A_ReadManeuver, \
                        A_AbortPlan
 
 
@@ -89,19 +88,6 @@ def const_tree(auv_config):
         )
 
 
-         # ReadTopic
-         # name,
-         # topic_name,
-         # topic_type,
-         # blackboard_variables,
-         # max_period = None,
-         # allow_silence = True -> If false, will fail if no message is received ever
-
-        read_mission = A_ReadManeuver(
-            ps_topic = auv_config.GUI_WP,
-            bb_key = bb_enums.GUI_WP)
-
-
         publish_heartbeat = A_SimplePublisher(topic = auv_config.HEARTBEAT_TOPIC,
                                               message_object = Empty())
 
@@ -112,7 +98,7 @@ def const_tree(auv_config):
                         children=[
                             publish_heartbeat,
                             read_abort,
-                            read_mission,
+                            #read_mission,
                         ])
 
 
@@ -144,12 +130,11 @@ def const_tree(auv_config):
                              A_SimplePublisher(topic=auv_config.ABORT_TOPIC,
                                                message_object = Empty()),
                              A_AbortPlan(),
-                             A_GotoWaypoint(auv_config = auv_config,
+                             A_ExecuteManeuver(auv_config = auv_config,
                                             action_namespace = auv_config.EMERGENCY_ACTION_NAMESPACE,
                                             node_name = 'A_EmergencySurface',
                                             goalless = True)
                          ])
-
 
 
         return Fallback(name='FB_SafetyOK',
@@ -166,7 +151,7 @@ def const_tree(auv_config):
         #######################
         # GOTO
         #######################
-        goto_action = A_GotoWaypoint(auv_config = auv_config)
+        goto_action = A_ExecuteManeuver(auv_config = auv_config)
 
         unfinalize = pt.blackboard.SetBlackboardVariable(variable_name = bb_enums.MISSION_FINALIZED,
                                                          variable_value = False,
@@ -183,70 +168,10 @@ def const_tree(auv_config):
                                ])
 
         #######################
-        # LIVE WP
-        #######################
-        live_wp_enabled = CheckBlackboardVariableValue(bb_enums.LIVE_WP_ENABLE,
-                                                       True,
-                                                       "C_LiveWPEnabled")
-
-        goto_live_wp = A_GotoWaypoint(auv_config = auv_config,
-                                      node_name="A_GotoLiveWP",
-                                      wp_from_bb = bb_enums.LIVE_WP,
-                                      live_mode_enabled=True)
-
-        live_wp_tree  = Sequence(name="SQ_FollowLiveWP",
-                                 children=[
-                                     live_wp_enabled,
-                                     goto_live_wp
-                                 ])
-
-        #######################
-        # GUI WP
-        #######################
-        gui_wp_enabled = CheckBlackboardVariableValue(bb_enums.GUI_WP_ENABLE,
-                                                      True,
-                                                      "C_GUIWPEnabled")
-
-
-        goto_gui_wp = A_GotoWaypoint(auv_config = auv_config,
-                                     node_name="A_GotoGUIWP",
-                                     wp_from_bb = bb_enums.GUI_WP,
-                                     live_mode_enabled=True)
-
-        gui_wp_tree  = Sequence(name="SQ_FollowGUIWP",
-                                children=[
-                                    gui_wp_enabled,
-                                    goto_gui_wp
-                                ])
-
-
-        #######################
-        # Algae farm line following
-        #######################
-        algae_follow_enabled = CheckBlackboardVariableValue(bb_enums.ALGAE_FOLLOW_ENABLE,
-                                                            True,
-                                                            "C_AlgaeFollowEnabled")
-
-
-        follow_algae = A_GotoWaypoint(auv_config = auv_config,
-                                      node_name="A_FollowAlgae",
-                                      wp_from_bb = bb_enums.ALGAE_FOLLOW_WP,
-                                      live_mode_enabled = True)
-
-        algae_farm_tree = Sequence(name="SQ_FollowAlgaeFarm",
-                                   children=[
-                                       algae_follow_enabled,
-                                       follow_algae
-                                   ])
-
-        #######################
         # until the plan is done
         #######################
         return Fallback(name="FB_ExecuteMissionPlan",
                         children=[
-                            gui_wp_tree,
-                            live_wp_tree,
-                            algae_farm_tree,
                             follow_plan
                         ])
 
