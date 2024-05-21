@@ -132,7 +132,7 @@ class NoderedHandler(object):
             - Check the msg.hash and msg.name fields, everything else can be empty for this
             - Purpose: Super-low-bandwidth mission selection
         """
-        if(msg.name != "" and msg.hash != "" and len(msg.waypoints) == 0):
+        if(msg.name != "" and msg.hash != "" and len(msg.maneuvers) == 0):
             # try to load a mission from file
             try:
                 loaded_msg = self._load_mission(msg)

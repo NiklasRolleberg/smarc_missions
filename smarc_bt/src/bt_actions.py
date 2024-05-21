@@ -15,7 +15,7 @@ import tf
 import actionlib
 
 from smarc_msgs.msg import FloatStamped
-from smarc_bt.msg import GotoWaypointAction, GotoWaypointGoal, GotoWaypoint, MissionControl
+from smarc_bt.msg import GotoWaypointAction, GotoWaypointGoal, GotoWaypoint, MissionControl, Maneuver
 from smarc_msgs.srv import UTMToLatLon, LatLonToUTM
 import actionlib_msgs.msg as actionlib_msgs
 from geometry_msgs.msg import PointStamped, PoseArray, PoseStamped, Point
@@ -119,8 +119,11 @@ class A_SetNextPlanAction(pt.behaviour.Behaviour):
 
         if not self.do_not_visit:
             mission_plan.visit_wp()
+            mission_plan.complete_maneuver()
 
-        next_action = mission_plan.get_current_wp("SetNextPlanAction")
+        #next_action = mission_plan.get_current_wp("SetNextPlanAction")
+        next_action = mission_plan.get_current_maneuver("SetNextPlanAction")
+
         if next_action is None:
             self.feedback_message = "Next action was None"
             rospy.logwarn_throttle(20, self.feedback_message)
@@ -178,10 +181,22 @@ class A_ExecuteManeuver(pt.Sequence):
                 self.action_server_ok = True
             return True
         
-        def make_goal_from_wp(self, wp):
+        def make_goal_from_maneuver(self, maneuver):
             # construct the message
             goal = GotoWaypointGoal()
-            goal.waypoint = wp.wp
+            goal.waypoint.pose.header
+            goal.waypoint.pose.header.frame_id
+
+            goal.waypoint.pose = maneuver.utm_wp
+            
+            #rospy.loginfo("Goal: " + goal.waypoint.pose.header.frame_id)
+            goal.waypoint.goal_tolerance = maneuver.maneuver.wp_goal_tolerance
+
+            goal.waypoint.travel_altitude = maneuver.maneuver.wp_targetAltitude
+            goal.waypoint.travel_depth = maneuver.maneuver.wp_targetDepth
+
+            goal.waypoint.travel_rpm = maneuver.maneuver.wp_rpm
+            goal.waypoint.name = maneuver.name
             return goal
         
         def feedback_cb(self, msg):
@@ -267,7 +282,7 @@ class A_ExecuteManeuver(pt.Sequence):
             if(maneuver is None):
                 return
             
-            self.action_goal = self.make_goal_from_wp(maneuver)
+            self.action_goal = self.make_goal_from_maneuver(maneuver)
             rospy.loginfo("Maneuver goal initialized:"+str(self.action_goal.waypoint.name))
 
             # ensure that we still need to send the goal
@@ -310,6 +325,7 @@ class A_ExecuteManeuver(pt.Sequence):
 
         #Create Action clients
         self.wp_actionclient = self.WP_ActionClient(auv_config=auv_config, vehicle=self.vehicle, node_name="wp_actionclient", action_namespace=action_namespace_wp)
+        #self.wp_actionclient2 = self.WP_ActionClient(auv_config=auv_config, vehicle=self.vehicle, node_name="wp_actionclient2", action_namespace="not used")
 
         self.add_child(self.wp_actionclient)
 
@@ -332,7 +348,8 @@ class A_ExecuteManeuver(pt.Sequence):
             return
 
         #Get current maneuver
-        maneuver = mission_plan.get_current_wp("GotoWaypointAction")
+        #maneuver = mission_plan.get_current_wp("GotoWaypointAction")
+        maneuver = mission_plan.get_current_maneuver("GotoWaypointAction")
 
         if maneuver is None:
             self.feedback_message = "Unplanned waypoint not found but it is enabled!"
@@ -343,8 +360,20 @@ class A_ExecuteManeuver(pt.Sequence):
         #    self.feedback_message = 'The frame of the waypoint({0}) does not match the expected frame({1}) of the action client!'.format(wp.frame_id, self.goal_tf_frame)
         #    rospy.logerr_throttle(5, self.feedback_message)
         #    return
+        
+        if(maneuver.maneuver.maneuver_type == Maneuver.MANEUVER_TYPE_WP):
+            #Waypoint
+            self.wp_actionclient.initialise(maneuver)
+        else:
+            rospy.logerr("This is not right!")
+            
+        if (maneuver.maneuver.maneuver_type == Maneuver.MANEUVER_TYPE_WP):
+            pass
+            #Couese
+            #self.wp_actionclient2.initialise(maneuver)
 
-        self.wp_actionclient.initialise(maneuver)
+        
+        
 
 
 
@@ -357,93 +386,3 @@ class A_ExecuteManeuver(pt.Sequence):
         """
 
         return self.wp_actionclient.update()
-
-        if not self.wp_actionclientaction_server_ok:
-            self.feedback_message = "Action Server not available!"
-            rospy.logerr_throttle_identical(5, self.feedback_message)
-            t = time.time()
-            diff = t - self.last_reconnect_attempt_time
-            if diff < self.reconnect_attempt_period:
-                self.feedback_message = "Re-trying to connect in {}s".format(diff)
-            else:
-                self.setup(self.reconnect_attempt_period-1)
-
-            return pt.Status.FAILURE
-
-        # if your action client is not valid
-        if not self.action_client:
-            self.feedback_message = "ActionClient is invalid! Client:"+str(self.action_client)
-            rospy.logerr(self.feedback_message)
-            return pt.Status.FAILURE
-
-        # if the action_goal is invalid
-        if not self.action_goal:
-            self.feedback_message = "No action_goal!"
-            rospy.logwarn(self.feedback_message)
-            return pt.Status.FAILURE
-
-        # if goal hasn't been sent yet
-        if not self.sent_goal:
-            self.send_goal()
-            rospy.loginfo("Sent goal to action server:"+str(self.action_goal))
-            self.feedback_message = "Goal sent"
-            return pt.Status.RUNNING
-
-        # if the goal was aborted or preempted
-        if self.action_client.get_state() in [actionlib_msgs.GoalStatus.ABORTED,
-                                              actionlib_msgs.GoalStatus.PREEMPTED]:
-            self.feedback_message = "Aborted goal"
-            rospy.loginfo(self.feedback_message)
-            return pt.Status.FAILURE
-
-        result = self.action_client.get_result()
-
-        # if the goal was accomplished
-        if result is not None and result.reached_waypoint:
-            self.feedback_message = "Completed goal"
-            rospy.loginfo(self.feedback_message)
-            return pt.Status.SUCCESS
-
-
-        # if we are in live mode, re-make a goal and send it again
-        if self.live_mode_enabled:
-            wp = self.bb.get(self.wp_from_bb)
-            if wp is None:
-                self.feedback_message = "wp in {} was reset while running!".format(self.wp_from_bb)
-                rospy.loginfo_throttle(3, self.feedback_message)
-                return pt.Status.FAILURE
-
-            # make sure it is not the exact same wp
-            # before making and sending a goal
-            if wp.is_too_similar_to_other(self.action_goal.waypoint):
-                if self.last_live_update_time < 5:
-                    self.feedback_message = "Live updated just now"
-                else:
-                    self.feedback_message = "Live updated {:.2f}s ago".format(time.time() - self.last_live_update_time)
-            else:
-                self.action_goal = self.make_goal_from_wp(wp)
-                self.send_goal()
-                self.last_live_update_time = time.time()
-                self.feedback_message = "Sent goal just now"
-
-        else:
-            if self.goalless:
-                self.feedback_message = "Running goalless"
-            else:
-                # no live updates, just report distance to planned wp
-                # still running, set our feedback message to distance left
-                current_loc = self.vehicle.position_utm
-                mplan = self.bb.get(bb_enums.MISSION_PLAN_OBJ)
-                if mplan is not None and current_loc is not None:
-                    wp = mplan.get_current_wp()
-                    x,y = current_loc
-                    h_dist = math.sqrt( (x-wp.x)**2 + (y-wp.y)**2 )
-                    v_dist = wp.depth - self.vehicle.depth
-                    self.feedback_message = "HDist:{:.2f}, VDist:{:.2f} towards {}".format(h_dist, v_dist, wp.wp.name)
-
-        if self.server_feedback_msg is not None and self.server_feedback_msg.feedback_message != "":
-            self.feedback_message = "[S:{}]  [C:{}]".format(self.server_feedback_msg.feedback_message, self.feedback_message)
-
-        return pt.Status.RUNNING
-
-

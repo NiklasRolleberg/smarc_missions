@@ -9,7 +9,7 @@ import math
 import numpy as np
 import py_trees as pt
 
-from geometry_msgs.msg import Point
+from geometry_msgs.msg import Point, PoseStamped
 from geographic_msgs.msg import GeoPoint
 from smarc_msgs.srv import LatLonToUTM, UTMToLatLon
 from smarc_bt.msg import GotoWaypoint, MissionControl, Maneuver
@@ -155,6 +155,96 @@ class Waypoint:
         return s
 
 
+class Maneuver:
+    def __init__(self, msg : Maneuver, source=None):
+        """ Maneuver message reference
+        #name of maneuver
+        string name
+
+        #Type of maneuver
+        uint8 maneuver_type
+
+        #Vehicle parameters
+        uint8 vehicle_mode
+
+        #Pause parameters
+        uint32 pause_runtime_s
+
+        #Couse parameters
+        uint32 course_runtime_s
+        float64 course_targetheading
+        float64 course_rpm
+        float64 course_targetDepth
+        float64 course_targetAltitude
+
+        #Wp 
+        float64 wp_goal_tolerance
+        float64 wp_targetLat
+        float64 wp_targetLon
+        float64 wp_rpm
+        float64 wp_targetDepth
+        float64 wp_targetAltitude
+
+
+        #Loiter
+        float64 loiter_inner_radius
+        float64 loiter_outer_radius
+        float64 loiter_targetLat
+        float64 loiter_targetLon
+        float64 loiter_rpm
+        #float64 loiter_targetDepth #Maybe later?
+        #float64 loiter_targetAltitude
+
+        """
+
+        # the GotoWaypoint object from smarc_msgs.msg
+        self.maneuver = msg
+        # use this to distinguish generated WPs and user-given WPs
+        self.source = source
+        self.name = msg.name
+        self.utm_wp = None
+
+
+    def set_utm_from_latlon(self, lat_lon_to_utm_serv, set_frame=False):
+        gp = GeoPoint()
+        gp.latitude = self.maneuver.wp_targetLat
+        gp.longitude = self.maneuver.wp_targetLon
+        gp.altitude = 0
+        res = lat_lon_to_utm_serv(gp)
+        self.utm_wp = PoseStamped()
+        self.utm_wp.pose.position.x = res.utm_point.x
+        self.utm_wp.pose.position.y = res.utm_point.y
+        if set_frame:
+            self.utm_wp.header.frame_id = 'utm'
+    '''
+    @property
+    def x(self):
+        return self.wp.pose.pose.position.x
+
+    @property
+    def y(self):
+        return self.wp.pose.pose.position.y
+
+    @property
+    def depth(self):
+        return self.wp.travel_depth
+
+    @property
+    def frame_id(self):
+        return self.wp.pose.header.frame_id
+    '''
+    @property
+    def is_actionable(self):
+        if (self.x == 0 and self.y == 0) and self.frame_id == 'utm':
+            return False
+
+        return True
+
+    def __str__(self):
+        s = 'Man: {}'.format(self.wp)
+        return s
+
+
 
 class MissionPlan:
     state_names = [
@@ -190,9 +280,11 @@ class MissionPlan:
         # keep track of which waypoint we are going to
         # start at -1 to indicate that _we are not going to any yet_
         self.current_wp_index = -1
+        self.current_maneuver_index = -1
         # and finally read from the mission control message all
         # the fields above
         self.waypoints = []
+        self.maneuvers = []
         if mission_control_msg is not None:
             self._read_mission_control(mission_control_msg)
 
@@ -240,12 +332,20 @@ class MissionPlan:
         self.hash = msg.hash
         self.timeout = msg.timeout
         self.waypoints = []
+        self.maneuvers = []
         ll_to_utm_serv = self._get_latlon_to_utm_service()
+
         for wp_msg in msg.waypoints:
             wp = Waypoint(goto_waypoint = wp_msg)
             # also make sure they are in utm
             wp.set_utm_from_latlon(ll_to_utm_serv, set_frame=True)
             self.waypoints.append(wp)
+
+        for m_msg in msg.maneuvers:
+            m = Maneuver(msg = m_msg)
+            if m_msg.maneuver_type == m.maneuver.MANEUVER_TYPE_WP:
+                m.set_utm_from_latlon(ll_to_utm_serv, set_frame=True)
+            self.maneuvers.append(m)
 
         self._change_state(MissionControl.FB_RECEIVED)
         rospy.loginfo("Got mission: name:{}, timeout:{}, num wps:{}, hash:{}".format(
@@ -264,6 +364,7 @@ class MissionPlan:
     def start_mission(self):
         self.mission_start_time = time.time()
         self.current_wp_index = 0
+        self.current_maneuver_index = 0
         rospy.loginfo("{} Started".format(self.plan_id))
         self._change_state(MissionControl.FB_RUNNING)
         #self.track.start_recording()
@@ -280,6 +381,7 @@ class MissionPlan:
 
     def stop_mission(self):
         self.current_wp_index = -1
+        self.current_maneuver_index = -1
         rospy.loginfo("{} Stopped".format(self.plan_id))
         self._change_state(MissionControl.FB_STOPPED)
         #self.track.stop_recording()
@@ -335,6 +437,27 @@ class MissionPlan:
             if source != None:
                 rospy.loginfo("Current wp {} acquired from plan ({})".format(wp.wp.name, source))
             return wp
+
+        return None
+    
+    def complete_maneuver(self):
+        """ call this when you finish a maneuver"""
+        if self.state == MissionControl.FB_RUNNING:
+            self.current_maneuver_index += 1
+
+        if self.current_maneuver_index >= len(self.maneuvers):
+            # we went tru all wps, we're done
+            self._change_state(MissionControl.FB_COMPLETED)
+    
+    def get_current_maneuver(self, source=None):
+        """
+        pop a maneuver from the remaining maneuvers and return it
+        """
+        if self.state == MissionControl.FB_RUNNING:
+            maneuver = self.maneuvers[self.current_maneuver_index]
+            if source != None:
+                rospy.loginfo("Current wp {} acquired from plan ({})".format(maneuver.name, source))
+            return maneuver
 
         return None
 
