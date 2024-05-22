@@ -196,7 +196,10 @@ class A_ExecuteManeuver(ptr.actions.ActionClient):
             goal.waypoint.travel_altitude = maneuver.maneuver.wp_targetAltitude
             goal.waypoint.travel_depth = maneuver.maneuver.wp_targetDepth
 
+            goal.waypoint.z_control_mode = GotoWaypoint.Z_CONTROL_DEPTH #Altitude?
+
             goal.waypoint.travel_rpm = maneuver.maneuver.wp_rpm
+            goal.waypoint.speed_control_mode = GotoWaypoint.SPEED_CONTROL_RPM
             goal.waypoint.name = maneuver.name
             return goal
         
