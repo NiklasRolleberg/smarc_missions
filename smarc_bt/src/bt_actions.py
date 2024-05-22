@@ -256,6 +256,7 @@ class A_ExecuteManeuver(ptr.actions.ActionClient):
                                                 actionlib_msgs.GoalStatus.PREEMPTED]:
                 self.feedback_message = "Aborted goal"
                 rospy.loginfo(self.feedback_message)
+                self.action_goal = None
                 return pt.Status.FAILURE
 
             result = self.action_client.get_result()
@@ -408,6 +409,7 @@ class A_ExecuteManeuver(ptr.actions.ActionClient):
                                                 actionlib_msgs.GoalStatus.PREEMPTED]:
                 self.feedback_message = "Aborted goal"
                 rospy.loginfo(self.feedback_message)
+                self.action_goal = None
                 return pt.Status.FAILURE
 
             result = self.action_client.get_result()
