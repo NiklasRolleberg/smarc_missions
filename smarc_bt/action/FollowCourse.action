@@ -1,0 +1,10 @@
+uint32 runtime_s
+float64 targetheading_deg
+float64 rpm
+float64 targetDepth
+float64 targetAltitude
+---
+bool done
+---
+time ETA
+string feedback_message

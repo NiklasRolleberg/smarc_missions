@@ -34,7 +34,7 @@ ALGAE_FOLLOW_ENABLE_TOPIC : 'smarc_bt/algae_farm/enable'
 ALGAE_FOLLOW_WP : 'smarc_bt/algae_farm/wp'
 
 # actions and services
-GOTO_ACTION_NAMESPACE : 'ctrl/goto_waypoint'
+GOTO_ACTION_NAMESPACE : 'ctrl'
 EMERGENCY_ACTION_NAMESPACE : 'ctrl/emergency_surface_action'
 
 

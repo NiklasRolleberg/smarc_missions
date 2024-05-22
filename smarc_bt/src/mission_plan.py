@@ -241,7 +241,7 @@ class Maneuver:
         return True
 
     def __str__(self):
-        s = 'Man: {}'.format(self.wp)
+        s = 'Man: {}'.format(self.name)
         return s
 
 
@@ -342,6 +342,7 @@ class MissionPlan:
             self.waypoints.append(wp)
 
         for m_msg in msg.maneuvers:
+            print("adding maneuver! " + str(m_msg))
             m = Maneuver(msg = m_msg)
             if m_msg.maneuver_type == m.maneuver.MANEUVER_TYPE_WP:
                 m.set_utm_from_latlon(ll_to_utm_serv, set_frame=True)
@@ -351,7 +352,7 @@ class MissionPlan:
         rospy.loginfo("Got mission: name:{}, timeout:{}, num wps:{}, hash:{}".format(
             self.plan_id,
             self.timeout,
-            len(self.waypoints),
+            len(self.maneuvers),
             self.hash))
 
 
@@ -446,6 +447,7 @@ class MissionPlan:
             self.current_maneuver_index += 1
 
         if self.current_maneuver_index >= len(self.maneuvers):
+            print("All maneuvers are done!" + str(len(self.maneuvers)))
             # we went tru all wps, we're done
             self._change_state(MissionControl.FB_COMPLETED)
     
@@ -453,10 +455,12 @@ class MissionPlan:
         """
         pop a maneuver from the remaining maneuvers and return it
         """
+        if MissionControl.FB_RUNNING: print("self.sate = running")
+        else: print("Self state is not running")
         if self.state == MissionControl.FB_RUNNING:
             maneuver = self.maneuvers[self.current_maneuver_index]
             if source != None:
-                rospy.loginfo("Current wp {} acquired from plan ({})".format(maneuver.name, source))
+                rospy.loginfo("Current maneuver {} acquired from plan ({})".format(maneuver.name, source))
             return maneuver
 
         return None

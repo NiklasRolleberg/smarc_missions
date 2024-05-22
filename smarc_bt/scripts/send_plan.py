@@ -19,22 +19,44 @@ def main():
     #Create mission message
     mission = MissionControl()
     mission.name = "niklas_mission"
-    mission.hash = res = ''.join(random.choices(string.ascii_lowercase, k=10))
+    mission.hash = ''.join(random.choices(string.ascii_lowercase, k=10))
     mission.timeout = 1000
     mission.command = MissionControl.CMD_SET_PLAN
+    
+    wp = Maneuver()
+    wp.name = "course"
+    wp.vehicle_mode = 0
+    wp.course_rpm = 200
+    wp.course_targetheading = 89
+    wp.course_runtime_s = 10
+    wp.course_targetAltitude = 10
+    wp.course_targetDepth = 0
+    wp.maneuver_type = Maneuver.MANEUVER_TYPE_COURSE
+    mission.maneuvers.append(wp)
 
-    for i in range(3):
-        wp = Maneuver()
-        wp.name = str(i)
-        wp.vehicle_mode = 0
-        wp.wp_goal_tolerance = 5
-        wp.wp_rpm = 200
-        wp.wp_targetDepth = 0
-        wp.wp_targetAltitude = 10
-        wp.wp_targetLat = 58.821559689368776
-        wp.wp_targetLon = 17.627995331480648
-        
-        mission.maneuvers.append(wp)
+    wp = Maneuver()
+    wp.name = "course2"
+    wp.vehicle_mode = 0
+    wp.course_rpm = 200
+    wp.course_targetheading = 0
+    wp.course_runtime_s = 30
+    wp.course_targetAltitude = 10
+    wp.course_targetDepth = 0
+    wp.maneuver_type = Maneuver.MANEUVER_TYPE_COURSE
+    mission.maneuvers.append(wp)
+
+
+    wp = Maneuver()
+    wp.name = str("7")
+    wp.vehicle_mode = 0
+    wp.wp_goal_tolerance = 10
+    wp.wp_rpm = 200
+    wp.wp_targetDepth = 0
+    wp.wp_targetAltitude = 10
+    wp.wp_targetLat = 58.25259
+    wp.wp_targetLon = 11.46197+0.001*6
+    wp.maneuver_type = Maneuver.MANEUVER_TYPE_WP
+    mission.maneuvers.append(wp)
     
     r.sleep()
     pub.publish(mission)
@@ -49,11 +71,10 @@ def main():
 
 
     i = 0
-    while not rospy.is_shutdown() and i < 10:
+    while not rospy.is_shutdown() and i < 60:
         r.sleep()
         i+=1
         print(i)
-
 
     cmd.command = MissionControl.CMD_STOP
     pub.publish(cmd)

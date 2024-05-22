@@ -24,17 +24,25 @@ import math
 import geometry as geom
 
 class SimpleRPMGoal(object):
+    GOALTYPE_WAYPOINT = 1
+    GOALTYPE_COURSE = 2
     def __init__(self,
-                 x,
-                 y,
-                 depth,
-                 rpm,
-                 tolerance):
+                 x = None,
+                 y = None,
+                 depth = None,
+                 rpm = None,
+                 tolerance = None, 
+                 targetCourse = None):
         self.x = x
         self.y = y
         self.depth = depth
         self.rpm = rpm
         self.tolerance = tolerance
+        self.targetCourse = targetCourse
+        self.goal_type = self.GOALTYPE_WAYPOINT
+        
+        if(targetCourse is not None):
+            self.goal_type = self.GOALTYPE_COURSE
 
     @property
     def pos(self):
@@ -122,10 +130,10 @@ class Lolo(object):
         ####
         # Get all the diffs towards the goal
         ####
-        depth_diff = self.goal.depth - self.depth
-        pitch_diff = np.arctan2(depth_diff, self.xy_dist_to_goal) * geom.RADTODEG
-        xy_diff = self.position_error[:2]
-        yaw_diff = geom.vec2_directed_angle(self.yaw_vec, xy_diff) * geom.RADTODEG
+        #depth_diff = self.goal.depth - self.depth
+        #pitch_diff = np.arctan2(depth_diff, self.xy_dist_to_goal) * geom.RADTODEG
+        #xy_diff = self.position_error[:2]
+        #yaw_diff = geom.vec2_directed_angle(self.yaw_vec, xy_diff) * geom.RADTODEG
 
         ####
         # Change mode according to the vehicle state and goal
@@ -152,8 +160,14 @@ class Lolo(object):
     #High level Control
     def control_wp(self):
         #set setpoint for yaw
-        self.desired_yaw = np.arctan2(self.position_error[1], self.position_error[0])
-        self.yaw_updated = True
+        if(self.goal.goal_type == self.goal.GOALTYPE_WAYPOINT):
+            self.desired_yaw = np.arctan2(self.position_error[1], self.position_error[0])
+            self.yaw_updated = True
+        elif (self.goal.goal_type == self.goal.GOALTYPE_COURSE):
+            self.desired_yaw = self.goal.targetCourse
+            self.yaw_updated = True
+        else:
+            rospy.logerr("Unknown goal type")
 
     def control_depth(self):
         #set setpoint for depth based on depth setpoint or altitude
@@ -176,7 +190,11 @@ class Lolo(object):
     ### Outward facing stuff, mostly automated away from this object
     ###############################
     def set_goal(self,x,y,depth,rpm,tolerance, altitude = None):
-        self.goal = SimpleRPMGoal(x,y,depth,rpm,tolerance)
+        self.goal = SimpleRPMGoal(x=x,y=y,depth=depth,rpm=rpm,tolerance=tolerance)
+        if altitude is not None: self.target_altitude = altitude
+
+    def set_course_goal(self,course,rpm, depth, altitude = None):
+        self.goal = SimpleRPMGoal(targetCourse=course,depth=depth,rpm=rpm)
         if altitude is not None: self.target_altitude = altitude
 
     def reset_goal(self):
