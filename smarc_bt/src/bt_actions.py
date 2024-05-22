@@ -165,7 +165,6 @@ class A_ExecuteManeuver(ptr.actions.ActionClient):
             self.reconnect_attempt_period = 5
 
         def setup(self, timeout):
-            print("----------WP Setup")
             """
             Overwriting the normal ptr action setup to stop it from failiing the setup step
             and instead handling this failure in the tree.
@@ -202,11 +201,9 @@ class A_ExecuteManeuver(ptr.actions.ActionClient):
             return goal
         
         def feedback_cb(self, msg):
-            print("----------WP fb callback")
             self.server_feedback_msg = msg
 
         def send_goal(self):
-            print("----------WP send goal")
             self.server_feedback_msg = None
             self.action_goal_handle = self.action_client.send_goal(self.action_goal, feedback_cb=self.feedback_cb)
             self.sent_goal = True
@@ -218,7 +215,6 @@ class A_ExecuteManeuver(ptr.actions.ActionClient):
             succeeded, is running, or has cancelled/aborted for some reason and
             map these to the usual behaviour return states.
             """
-            print("----------WP Update")
 
             if not self.action_server_ok:
                 self.feedback_message = "Action Server not available!"
@@ -286,7 +282,6 @@ class A_ExecuteManeuver(ptr.actions.ActionClient):
             return pt.Status.RUNNING
 
         def initialise(self, maneuver = None):
-            print("----------WP Initialize")
             if(maneuver is None):
                 return
             
@@ -323,7 +318,6 @@ class A_ExecuteManeuver(ptr.actions.ActionClient):
             self.reconnect_attempt_period = 5
 
         def setup(self, timeout):
-            print("----------Course setup")
             """
             Overwriting the normal ptr action setup to stop it from failiing the setup step
             and instead handling this failure in the tree.
@@ -353,17 +347,14 @@ class A_ExecuteManeuver(ptr.actions.ActionClient):
             return goal
         
         def feedback_cb(self, msg):
-            print("----------Course fb callback")
             self.server_feedback_msg = msg
 
         def send_goal(self):
-            print("----------Course send goal")
             self.server_feedback_msg = None
             
             self.action_goal_handle = self.action_client.send_goal(self.action_goal, feedback_cb=self.feedback_cb)
             self.sent_goal = True
             #self.vehicle.last_goto_wp = self.action_goal.waypoint
-            print(self.action_goal_handle)
 
         def update(self):
             """
@@ -371,7 +362,6 @@ class A_ExecuteManeuver(ptr.actions.ActionClient):
             succeeded, is running, or has cancelled/aborted for some reason and
             map these to the usual behaviour return states.
             """
-            print("----------Course update")
 
             if not self.action_server_ok:
                 self.feedback_message = "Action Server not available!"
@@ -439,7 +429,6 @@ class A_ExecuteManeuver(ptr.actions.ActionClient):
             return pt.Status.RUNNING
 
         def initialise(self, maneuver = None):
-            print("----------Course initialize")
             if(maneuver is None):
                 return
             
@@ -455,7 +444,6 @@ class A_ExecuteManeuver(ptr.actions.ActionClient):
                  auv_config,
                  action_namespace = None,
                  node_name = "A_ExecuteManeuver"):
-        print("------------Init")
         """
         Runs an action server that will move the robot to the given waypoint
 
@@ -492,13 +480,11 @@ class A_ExecuteManeuver(ptr.actions.ActionClient):
         #self.add_child(self.wp_actionclient)
 
     def setup(self, timeout):
-        print("------------Setup")
         r1 = self.wp_actionclient.setup(timeout)
         r2 = self.course_actionclient.setup(timeout)
         return r1 or r2
 
     def initialise(self):
-        print("------------Initialize")
         if not self.wp_actionclient.action_server_ok:
             self.feedback_message = "No WP action server found for {}!".format(self.action_namespace)
             rospy.logwarn_throttle(5, self.feedback_message)
@@ -542,7 +528,6 @@ class A_ExecuteManeuver(ptr.actions.ActionClient):
             rospy.logerr("This is not right!")        
 
     def update(self):
-        print("------------Update")
         """
         Check only to see whether the underlying action server has
         succeeded, is running, or has cancelled/aborted for some reason and
@@ -559,8 +544,9 @@ class A_ExecuteManeuver(ptr.actions.ActionClient):
         return pt.Status.FAILURE
     
     def terminate(self, new_status):
-        print("--------terminate")
         self.wp_actionclient.terminate(new_status)
+        self.wp_actionclient.action_goal = None
         self.course_actionclient.terminate(new_status)
+        self.course_actionclient.action_goal = None
 
         
