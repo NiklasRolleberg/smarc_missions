@@ -57,6 +57,8 @@ class LoloGotoWP(object):
                                                           GotoWaypointAction,
                                                           execute_cb = self.run,
                                                           auto_start = False)
+        self.start_time = None
+        self.wp_timeout = 300
 
     ###################################################
     # do something every tick here
@@ -76,6 +78,7 @@ class LoloGotoWP(object):
         self.action_server.publish_feedback(self.fb)
 
     def start(self):
+        self.start_time = rospy.Time.now()
         self.action_server.start()
         rospy.loginfo("Started!")
 
@@ -145,6 +148,15 @@ class LoloGotoWP(object):
         # and finally, we start spinning and controlling things
         rate = rospy.Rate(self.update_freq)
         while not rospy.is_shutdown():
+            
+            #Check timeout
+            if self.start_time != None:
+                now = rospy.Time.now()
+                runtime = now - self.start_time
+                if(runtime > rospy.Duration(self.wp_timeout)):
+                    self.on_preempt()
+                    return
+
             if self.action_server.is_preempt_requested():
                 self.on_preempt()
                 # return, not break!
