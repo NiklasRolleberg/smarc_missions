@@ -106,7 +106,7 @@ class C_DiveTimeOK(pt.behaviour.Behaviour):
         else:
             self.feedback_message = "Diving time: "+ str(time_since_dive)
 
-        if time_since_dive < 60: #self.max_diveTime:
+        if time_since_dive < self.max_diveTime:
             return pt.Status.SUCCESS
         else:
             rospy.logwarn_throttle(1, "Too long of a dive! "+str(time_since_dive) + "s")

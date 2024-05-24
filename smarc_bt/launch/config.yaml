@@ -58,7 +58,7 @@ BTCOMMAND_TOPIC: 'smarc_bt/bt_command'
 # hard values
 MAX_DEPTH : 20
 MIN_ALTITUDE : 0.1
-MAX_DIVETIME : 60
+MAX_DIVETIME : 600
 # how many ticks to run emergency action before we give up
 # on the current wp and skip it
 # in ticks
