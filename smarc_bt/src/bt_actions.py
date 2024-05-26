@@ -545,6 +545,11 @@ class A_ExecuteManeuver(ptr.actions.ActionClient):
             return pt.Status.SUCCESS
         if r1  == pt.Status.RUNNING or r2 == pt.Status.RUNNING:
             return pt.Status.RUNNING
+        
+        rospy.logerr("WP or course action client failed. Calling stop mission")
+        mission_plan = self.bb.get(bb_enums.MISSION_PLAN_OBJ)
+        mission_plan.stop_mission()
+        
         return pt.Status.FAILURE
     
     def terminate(self, new_status):

@@ -78,9 +78,14 @@ class LoloGotoWP(object):
         self.action_server.publish_feedback(self.fb)
 
     def start(self):
-        self.start_time = rospy.Time.now()
         self.action_server.start()
         rospy.loginfo("Started!")
+
+    def on_abort(self):
+        self.ros_lolo.stop()
+        self.feedback("Aborted")
+        self.action_server.set_aborted(self.result, "[{}] Aborted!".format(self.name))
+        self.reset_fb_result()
 
     def on_preempt(self):
         self.ros_lolo.stop()
@@ -99,6 +104,7 @@ class LoloGotoWP(object):
         self.feedback("Got goal!")
         self.reset_fb_result()
         self.ros_lolo.start()
+        self.start_time = rospy.Time.now()
 
     def reset_fb_result(self):
         self.fb = GotoWaypointFeedback()
@@ -154,7 +160,8 @@ class LoloGotoWP(object):
                 now = rospy.Time.now()
                 runtime = now - self.start_time
                 if(runtime > rospy.Duration(self.wp_timeout)):
-                    self.on_preempt()
+                    rospy.logerr("ERROR WP action timed out")
+                    self.on_abort()
                     return
 
             if self.action_server.is_preempt_requested():

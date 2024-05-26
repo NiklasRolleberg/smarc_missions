@@ -33,7 +33,7 @@ class NoderedHandler(object):
         self._mission_control_sub = rospy.Subscriber(self._config.MISSION_CONTROL_TOPIC,
                                                      MissionControl,
                                                      self._mission_control_cb,
-                                                     queue_size=1)
+                                                     queue_size=10)
 
         self._mc_msg = MissionControl()
         self._mission_control_pub = rospy.Publisher(self._config.MISSION_CONTROL_TOPIC,
@@ -74,7 +74,7 @@ class NoderedHandler(object):
             # also inherit the hash given in the message for feedback
             self._mc_msg.hash = mission_plan.hash
 
-        self._mission_control_pub.publish(self._mc_msg)
+        #self._mission_control_pub.publish(self._mc_msg)
 
 
     def _command_matches_known_mission(self, msg):
@@ -239,6 +239,9 @@ class NoderedHandler(object):
 
         # there might be a command from nodered, check it
         msg = self._last_received_mc_msg
+
+        # Set last received message to None so we dont need to read it again
+        self._last_received_mc_msg = None
 
         if msg.command == MissionControl.CMD_IS_FEEDBACK:
             # just silently ignore these
