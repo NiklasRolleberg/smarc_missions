@@ -58,7 +58,7 @@ class LoloGotoWP(object):
                                                           execute_cb = self.run,
                                                           auto_start = False)
         self.start_time = None
-        self.wp_timeout = 300
+        self.wp_timeout = 600
 
     ###################################################
     # do something every tick here
@@ -114,10 +114,26 @@ class LoloGotoWP(object):
         self.on_new_goal()
         # first, extract the position from the goal
         # and convert that to whatever reference frame the lolo model is in
-        goal.waypoint.pose.header.stamp = rospy.Time.now()
+        goal.waypoint.pose.header.stamp = rospy.Time(0)
+        #goal.waypoint.pose.header.stamp = rospy.Time.now()
         wp = goal.waypoint
-        goal_pose_stamped = self.tf_listener.transformPose(target_frame = self.ros_lolo.reference_link,
-                                                           ps = wp.pose)
+        
+
+        attempts = 0 
+        while not rospy.is_shutdown():
+            try:
+                attempts +=1
+                self.tf_listener.waitForTransform(target_frame = self.ros_lolo.reference_link, source_frame=wp.pose.header.frame_id, time = rospy.Time(0), timeout = rospy.Duration(1))
+                goal_pose_stamped = self.tf_listener.transformPose(target_frame = self.ros_lolo.reference_link, ps = wp.pose)
+                break
+            except Exception as e:
+                print(e)
+                rospy.logwarn("Tansform between " + str(wp.pose.header.frame_id) + " and " + str(self.ros_lolo.reference_link) + "Not found")
+                rospy.sleep(1)
+                if attempts > 10:
+                    raise e
+            
+
         target_posi = goal_pose_stamped.pose.position
 
         # acquire the depth
@@ -183,6 +199,9 @@ class LoloGotoWP(object):
 
             self.update()
             rate.sleep()
+
+            #TESTING -> Makes actionserver return success
+            #break
 
         # finished running
         self.on_done()
