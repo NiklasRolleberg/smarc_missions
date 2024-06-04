@@ -145,6 +145,7 @@ class C_AltOK(pt.behaviour.Behaviour):
         self.bb = pt.blackboard.Blackboard()
         self.min_alt = self.bb.get(bb_enums.MIN_ALTITUDE)
         self.vehicle = self.bb.get(bb_enums.VEHICLE_STATE)
+        self.no_altitude_counter = 0
         super(C_AltOK, self).__init__(name="C_AltOK")
 
     def update(self):
@@ -154,12 +155,17 @@ class C_AltOK(pt.behaviour.Behaviour):
 
         if alt is None or time_since_last_update > 10:
             rospy.logwarn_throttle(10, "NO ALTITUDE READ! The tree will run anyways")
+            self.no_altitude_counter += 1
             self.feedback_message = "Last read:None, min:{m:.2f}".format(m=self.min_alt)
+            if(self.no_altitude_counter > 10):
+                rospy.loginfo_throttle(1, "No altitude! "+str(alt))
+                return pt.Status.FAILURE
             return pt.Status.SUCCESS
         else:
             self.feedback_message = "Last read:{l:.2f}, min:{m:.2f}".format(l=alt, m=self.min_alt)
 
         if alt > self.min_alt:
+            self.no_altitude_counter = 0
             return pt.Status.SUCCESS
         else:
             rospy.loginfo_throttle(5, "Too close to the bottom! "+str(alt))

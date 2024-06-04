@@ -136,7 +136,10 @@ class LoloGotoWP(object):
 
         target_posi = goal_pose_stamped.pose.position
 
-        # acquire the depth
+        # depth and altitude setpoints
+        depth = wp.travel_depth
+        altitude = wp.travel_altitude
+        '''
         altitude = None
         if wp.z_control_mode == GotoWaypoint.Z_CONTROL_DEPTH:
             depth = wp.travel_depth
@@ -146,6 +149,7 @@ class LoloGotoWP(object):
         else:
             rospy.logwarn("Lolo only does DEPTH control! Setting depth to 0")
             depth = 0
+        '''
 
         # acquire the rpm
         if wp.speed_control_mode == GotoWaypoint.SPEED_CONTROL_RPM:
