@@ -238,7 +238,7 @@ def main():
     # create a dynamic reconfig server that defaults to the
     # configs we already have
     # this will update stuff in the BB
-    reconfig = ReconfigServer(config)
+    #reconfig = ReconfigServer(config) #Don't create reconfig server. It's annoying when it changes things.
 
     # first construct a vehicle that will hold and sub to most things
     rospy.loginfo("Setting up vehicle")

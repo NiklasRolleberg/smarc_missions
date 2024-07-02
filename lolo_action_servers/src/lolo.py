@@ -72,7 +72,7 @@ class Lolo(object):
         self.pos_x = 0
         self.pos_y = 0
         self.pos_depth = 0
-        self.altitude = 0
+        self.altitude = None
         self.pitch = 0
         self.roll = 0
         self.yaw = 0
@@ -209,7 +209,7 @@ class Lolo(object):
         #print("\tlolo pos: (" + str(self.x) + ", " + str(self.y) + ")")
 
     def update_altitude(self, alt=None):
-        if alt is not None and alt > 0: self.altitude = alt
+        if alt is not None and alt > 0 and alt != math.nan: self.altitude = alt
         else: self.altitude = None
 
     def update_ori(self, r=None, p=None, y=None):

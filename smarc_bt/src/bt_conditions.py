@@ -117,23 +117,34 @@ class C_DepthOK(pt.behaviour.Behaviour):
     def __init__(self):
         self.bb = pt.blackboard.Blackboard()
         self.vehicle = self.bb.get(bb_enums.VEHICLE_STATE)
-        self.max_depth = self.bb.get(bb_enums.MAX_DEPTH)
+        self.max_depth = self.vehicle.auv_config.MAX_DEPTH
         super(C_DepthOK, self).__init__(name="C_DepthOK")
 
 
     def update(self):
-        self.max_depth = self.bb.get(bb_enums.MAX_DEPTH)
+        #self.max_depth = self.bb.get(bb_enums.MAX_DEPTH)
         depth = self.vehicle.depth
         time_since_last_update = time.time() - self.vehicle.last_update_depth
         #print("last depth update: " + str(time_since_last_update))
         if depth is None or time_since_last_update > 10:
             rospy.logwarn_throttle(5, "NO DEPTH READ! Depth is very important. FAILURE")
-            self.feedback_message = "Last read:None, max:{m:.2f}".format(l=depth, m=self.max_depth)
+            if(self.max_depth != None):
+                self.feedback_message = "Last read:None, max:{m:.2f}".format(l=depth, m=self.max_depth)
+            else:
+                rospy.logwarn_throttle(1, "C_depthOK: Max depth is None")
             return pt.Status.FAILURE
         else:
-            self.feedback_message = "Last read:{l:.2f}, max:{m:.2f}".format(l=depth, m=self.max_depth)
+            if(self.max_depth != None):
+                self.feedback_message = "Last read:{l:.2f}, max:{m:.2f}".format(l=depth, m=self.max_depth)
+            else:
+                rospy.logwarn_throttle(1, "C_depthOK: Max depth is None")
+        
+        max_depth = self.max_depth
+        if max_depth == None:
+            rospy.logwarn_throttle(1, " Max depth is None. Defaulting to 1m ")
+            max_depth = 1
 
-        if depth < self.max_depth:
+        if depth < max_depth:
             return pt.Status.SUCCESS
         else:
             rospy.logwarn_throttle(5, "Too deep!"+str(depth))
@@ -143,18 +154,18 @@ class C_DepthOK(pt.behaviour.Behaviour):
 class C_AltOK(pt.behaviour.Behaviour):
     def __init__(self):
         self.bb = pt.blackboard.Blackboard()
-        self.min_alt = self.bb.get(bb_enums.MIN_ALTITUDE)
         self.vehicle = self.bb.get(bb_enums.VEHICLE_STATE)
+        self.min_alt = self.vehicle.auv_config.MIN_ALTITUDE
         self.no_altitude_counter = 0
         super(C_AltOK, self).__init__(name="C_AltOK")
 
     def update(self):
-        self.min_alt = self.bb.get(bb_enums.MIN_ALTITUDE)
+        #self.min_alt = self.bb.get(bb_enums.MIN_ALTITUDE)
         alt = self.vehicle.altitude
         time_since_last_update = time.time() - self.vehicle.last_update_altitude
 
-        if alt is None or time_since_last_update > 10:
-            rospy.logwarn_throttle(10, "NO ALTITUDE READ! The tree will run anyways")
+        if time_since_last_update > 10:
+            rospy.logwarn_throttle(10, "NO ALTITUDE READ! The this means something is not working. Start the altutude estimator.")
             self.no_altitude_counter += 1
             self.feedback_message = "Last read:None, min:{m:.2f}".format(m=self.min_alt)
             if(self.no_altitude_counter > 10):
@@ -163,8 +174,8 @@ class C_AltOK(pt.behaviour.Behaviour):
             return pt.Status.SUCCESS
         else:
             self.feedback_message = "Last read:{l:.2f}, min:{m:.2f}".format(l=alt, m=self.min_alt)
-
-        if alt > self.min_alt:
+        
+        if alt != math.nan or alt > self.min_alt: #Altutude = NaN means no bottom lock.
             self.no_altitude_counter = 0
             return pt.Status.SUCCESS
         else:
