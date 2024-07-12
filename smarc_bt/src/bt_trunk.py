@@ -22,7 +22,7 @@ from py_trees.composites import Selector as Fallback
 
 # messages
 from std_msgs.msg import Float64, Empty, Bool
-from smarc_bt.msg import MissionControl
+from smarc_bt.msg import MissionControl, Maneuver
 
 from auv_config import AUVConfig
 from reconfig_server import ReconfigServer
@@ -35,6 +35,7 @@ from bt_conditions import C_DepthOK, \
                           C_AltOK, \
                           C_LeakOK, \
                           C_ExpectPlanState, \
+                          C_ExpectManeuverType, \
                           C_TimeoutNotReached
 
 from bt_common import Sequence, \
@@ -46,6 +47,8 @@ from bt_common import Sequence, \
                       Not
 
 from bt_actions import A_ExecuteManeuver, \
+                       A_GotoWaypoint, \
+                       A_Followcourse, \
                        A_SetNextPlanAction, \
                        A_PublishFinalize, \
                        A_AbortPlan
@@ -70,11 +73,7 @@ def const_tree(auv_config):
 
     auv_config is a simple data object with a bunch of UPPERCASE fields in it.
     """
-    # slightly hacky way to keep track of 'runnable' actions
-    # such actions should add their names to this list in their init
-    # just for Neptus vehicle state for now
     bb = pt.blackboard.Blackboard()
-    bb.set(bb_enums.MANEUVER_ACTIONS, [])
 
     # just for clarity when looking at the bb in the field
     bb.set(bb_enums.MISSION_FINALIZED, False)
@@ -151,7 +150,28 @@ def const_tree(auv_config):
         #######################
         # GOTO
         #######################
-        goto_action = A_ExecuteManeuver(auv_config = auv_config)
+        #runmission = A_ExecuteManeuver(auv_config = auv_config)
+
+        runmaneuver = Fallback(name="FB_runmaneuver",
+                        children=[
+                            Sequence(name="SQ_course_maneuver",
+                               children=[
+                                         C_ExpectManeuverType(Maneuver.MANEUVER_TYPE_COURSE),
+                                         A_Followcourse(auv_config = auv_config)
+                               ])
+                            ,
+                            Sequence(name="SQ_wp_maneuver",
+                               children=[
+                                         C_ExpectManeuverType(Maneuver.MANEUVER_TYPE_WP),
+                                         A_GotoWaypoint(auv_config = auv_config)
+                               ])
+                        ])
+
+        runmission = Fallback(name="FB_runmission",
+                        children=[
+                            #TODO: Add Obstacle avoidance
+                            runmaneuver
+                        ])
 
         unfinalize = pt.blackboard.SetBlackboardVariable(variable_name = bb_enums.MISSION_FINALIZED,
                                                          variable_value = False,
@@ -163,7 +183,7 @@ def const_tree(auv_config):
                                children=[
                                          C_ExpectPlanState(MissionControl.FB_RUNNING),
                                          unfinalize,
-                                         goto_action,
+                                         runmission,
                                          A_SetNextPlanAction()
                                ])
 

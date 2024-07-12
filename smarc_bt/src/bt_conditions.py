@@ -207,6 +207,31 @@ class C_ExpectPlanState(pt.behaviour.Behaviour):
         self.feedback_message = "Not {}".format(self.s)
         return pt.Status.FAILURE
 
+class C_ExpectManeuverType(pt.behaviour.Behaviour):
+    def __init__(self, expected_type):
+        """
+        Return success if the current maneuver in the mission plan has the expected type
+        """
+        self.bb = pt.blackboard.Blackboard()
+        #s = MissionPlan.state_names[expected_type]
+        super(C_ExpectManeuverType, self).__init__(name="C_ExpectManeuverType({})".format(expected_type))
+        self.expected_type = expected_type
+        #self.s = s
+
+    def update(self):
+        plan = self.bb.get(bb_enums.MISSION_PLAN_OBJ)
+        if plan is None:
+            self.feedback_message = "No plan"
+            return pt.Status.FAILURE
+
+        current_maneuer = plan.get_current_maneuver("C_ExpectManeuverType")
+        if current_maneuer.maneuver.maneuver_type == self.expected_type:
+            self.feedback_message = "is {}".format("success")
+            return pt.Status.SUCCESS
+
+        self.feedback_message = "Not {}".format("Not the correct maneuver type")
+        return pt.Status.FAILURE
+
 
 
 

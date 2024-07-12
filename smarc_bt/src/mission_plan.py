@@ -455,12 +455,12 @@ class MissionPlan:
         """
         pop a maneuver from the remaining maneuvers and return it
         """
-        if MissionControl.FB_RUNNING: print("self.sate = running")
-        else: print("Self state is not running")
+        #if self.state == MissionControl.FB_RUNNING: print("self.sate = running")
+        #else: print("Self state is not running")
         if self.state == MissionControl.FB_RUNNING:
             maneuver = self.maneuvers[self.current_maneuver_index]
             if source != None:
-                rospy.loginfo("Current maneuver {} acquired from plan ({})".format(maneuver.name, source))
+                rospy.loginfo_throttle_identical(10, "Current maneuver {} acquired from plan ({})".format(maneuver.name, source))
             return maneuver
 
         return None
