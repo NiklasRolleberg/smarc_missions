@@ -36,7 +36,11 @@ from bt_conditions import C_DepthOK, \
                           C_LeakOK, \
                           C_ExpectPlanState, \
                           C_ExpectManeuverType, \
-                          C_TimeoutNotReached
+                          C_ExpectBBManeuverType, \
+                          C_AvoidObstacle, \
+                          C_TimeoutNotReached,\
+                          C_BBvariable_True, \
+                          C_BBvariable_False
 
 from bt_common import Sequence, \
                       CheckBlackboardVariableValue, \
@@ -49,9 +53,17 @@ from bt_common import Sequence, \
 from bt_actions import A_ExecuteManeuver, \
                        A_GotoWaypoint, \
                        A_Followcourse, \
+                       A_GotoWaypoint_BB, \
+                       A_Followcourse_BB, \
+                       A_setBBManeuverFromPlan, \
                        A_SetNextPlanAction, \
                        A_PublishFinalize, \
-                       A_AbortPlan
+                       A_AbortPlan, \
+                       A_Avoidence_test, \
+                       A_SetBBVariable_True, \
+                       A_SetBBVariable_False, \
+                       A_updateAvoidance_maneuver, \
+                       A_BBManeuver_depth_to_current
 
 
 
@@ -150,28 +162,44 @@ def const_tree(auv_config):
         #######################
         # GOTO
         #######################
-        #runmission = A_ExecuteManeuver(auv_config = auv_config)
+        #runmission = A_ExecuteManeuver(auv_config = auv_config)        
 
         runmaneuver = Fallback(name="FB_runmaneuver",
                         children=[
+
+                            Sequence(name="SQ_avoidence maneuver",
+                               children=[
+                                        Fallback(name="FB_Run",
+                                            children=[
+                                                C_AvoidObstacle(),
+                                                C_BBvariable_True(key = "AVOIDING_OBSTACLE")
+                                            ]),
+                                        A_SetBBVariable_True(key = "AVOIDING_OBSTACLE"),
+                                        A_BBManeuver_depth_to_current(key="MISSIONPLAN_MANEUVER"),
+                                        A_GotoWaypoint_BB(auv_config = auv_config, key = "AVOIDANCE_MANEUVER", action_namespace=auv_config.AVOID_ACTION_NAMESPACE),
+                                        A_SetBBVariable_False(key = "AVOIDING_OBSTACLE")
+                               ])
+                            ,
                             Sequence(name="SQ_course_maneuver",
                                children=[
-                                         C_ExpectManeuverType(Maneuver.MANEUVER_TYPE_COURSE),
-                                         A_Followcourse(auv_config = auv_config)
+                                         C_ExpectBBManeuverType("MISSIONPLAN_MANEUVER", Maneuver.MANEUVER_TYPE_COURSE),
+                                         A_Followcourse_BB(auv_config = auv_config, key = "MISSIONPLAN_MANEUVER"),
+                                         A_SetNextPlanAction()
                                ])
                             ,
                             Sequence(name="SQ_wp_maneuver",
                                children=[
-                                         C_ExpectManeuverType(Maneuver.MANEUVER_TYPE_WP),
-                                         A_GotoWaypoint(auv_config = auv_config)
+                                         C_ExpectBBManeuverType("MISSIONPLAN_MANEUVER", Maneuver.MANEUVER_TYPE_WP),
+                                         A_GotoWaypoint_BB(auv_config = auv_config, key = "MISSIONPLAN_MANEUVER"),
+                                         A_SetNextPlanAction()
                                ])
                         ])
 
-        runmission = Fallback(name="FB_runmission",
-                        children=[
-                            #TODO: Add Obstacle avoidance
-                            runmaneuver
-                        ])
+        #runmission = Fallback(name="FB_runmission",
+        #                children=[
+        #                    #TODO: Add Obstacle avoidance
+        #                    runmaneuver
+        #                ])
 
         unfinalize = pt.blackboard.SetBlackboardVariable(variable_name = bb_enums.MISSION_FINALIZED,
                                                          variable_value = False,
@@ -183,8 +211,8 @@ def const_tree(auv_config):
                                children=[
                                          C_ExpectPlanState(MissionControl.FB_RUNNING),
                                          unfinalize,
-                                         runmission,
-                                         A_SetNextPlanAction()
+                                         A_setBBManeuverFromPlan("MISSIONPLAN_MANEUVER"),
+                                         runmaneuver
                                ])
 
         #######################
@@ -217,7 +245,12 @@ def const_tree(auv_config):
     root = Sequence(name='SQ_ROOT',
                     children=[
                               const_data_ingestion_tree(),
-                              const_safety_tree(),
+                              #const_safety_tree(),
+                              Fallback(name="FB_UpdateAvoidWP",
+                                    children=[
+                                        C_BBvariable_True(key = "AVOIDING_OBSTACLE"),
+                                        A_updateAvoidance_maneuver(key = "AVOIDANCE_MANEUVER")
+                                    ]),
                               run_tree
                     ])
 

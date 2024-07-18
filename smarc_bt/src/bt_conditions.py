@@ -183,6 +183,38 @@ class C_AltOK(pt.behaviour.Behaviour):
             return pt.Status.FAILURE
 
 
+class C_BBvariable_True(pt.behaviour.Behaviour):
+    def __init__(self, key):
+        self.bb = pt.blackboard.Blackboard()
+        self.bb_key = key
+        super(C_BBvariable_True, self).__init__(name="C_BBvariable_True")
+
+    def update(self):
+        var = self.bb.get(self.bb_key)
+        if(var == None):
+            rospy.logerr_throttle(10, "C_BBvariable_True : variable is None")
+
+        if(var == True):
+            return pt.Status.SUCCESS
+        return pt.Status.FAILURE
+
+class C_BBvariable_False(pt.behaviour.Behaviour):
+    def __init__(self, key):
+        self.bb = pt.blackboard.Blackboard()
+        self.bb_key = key
+        super(C_BBvariable_False, self).__init__(name="C_BBvariable_False")
+
+    def update(self):
+        var = self.bb.get(self.bb_key)
+        if(var == None):
+            rospy.logerr_throttle(10,"C_BBvariable_False : variable is None")
+
+        if(var == False):
+            return pt.Status.SUCCESS
+        return pt.Status.FAILURE
+
+
+
 class C_ExpectPlanState(pt.behaviour.Behaviour):
     def __init__(self, expected_state):
         """
@@ -225,11 +257,66 @@ class C_ExpectManeuverType(pt.behaviour.Behaviour):
             return pt.Status.FAILURE
 
         current_maneuer = plan.get_current_maneuver("C_ExpectManeuverType")
-        if current_maneuer.maneuver.maneuver_type == self.expected_type:
+        if current_maneuer.maneuver_type == self.expected_type:
             self.feedback_message = "is {}".format("success")
             return pt.Status.SUCCESS
 
         self.feedback_message = "Not {}".format("Not the correct maneuver type")
+        return pt.Status.FAILURE
+    
+class C_ExpectBBManeuverType(pt.behaviour.Behaviour):
+    def __init__(self, key, expected_type):
+        """
+        Return success if the current maneuver in the mission plan has the expected type
+        """
+        self.bb = pt.blackboard.Blackboard()
+        #s = MissionPlan.state_names[expected_type]
+        super(C_ExpectBBManeuverType, self).__init__(name="C_ExpectBBManeuverType({})".format(str(expected_type)))
+        self.expected_type = expected_type
+        self.bb_maneuver_key = key
+        #self.s = s
+
+    def update(self):
+        #Get maneuver from BB
+        current_maneuver = self.bb.get(self.bb_maneuver_key)
+
+        if current_maneuver is None:
+            self.feedback_message = "No maneuver in blackboard! key: " + str(self.bb_maneuver_key)
+            rospy.loginfo_throttle(3, self.feedback_message)
+            return pt.Status.FAILURE
+        if current_maneuver.maneuver.maneuver_type == self.expected_type:
+            self.feedback_message = "is {}".format("success")
+            return pt.Status.SUCCESS
+
+        self.feedback_message = "Not {}".format("Not the correct maneuver type")
+        return pt.Status.FAILURE
+
+class C_AvoidObstacle(pt.behaviour.Behaviour):
+    def __init__(self):
+        self.bb = pt.blackboard.Blackboard()
+        self.vehicle = self.bb.get(bb_enums.VEHICLE_STATE)
+        self.min_alt = 200
+        self.no_altitude_counter = 0
+        super(C_AvoidObstacle, self).__init__(name="C_AvoidObstacle")
+
+    def update(self):
+        alt = self.vehicle.altitude
+        time_since_last_update = time.time() - self.vehicle.last_update_altitude
+
+        if time_since_last_update > 10:
+            self.no_altitude_counter += 1
+            self.feedback_message = "Last read:None, min:{m:.2f}".format(m=self.min_alt)
+            print("Obstacle avoid: time since last alt update" + str(time_since_last_update))
+            return pt.Status.FAILURE
+        else:
+            self.feedback_message = "Last read:{l:.2f}, min:{m:.2f}".format(l=alt, m=self.min_alt)
+
+        rospy.logwarn_throttle(30,"obstacle check. alt=" +str(alt) + ", min alt=" + str(self.min_alt))
+        
+        if alt != math.nan and alt < self.min_alt: #Altutude = NaN means no bottom lock.
+            self.no_altitude_counter = 0
+            return pt.Status.SUCCESS
+            rospy.loginfo_throttle(5, "Too close to the obstacle! "+str(alt))    
         return pt.Status.FAILURE
 
 

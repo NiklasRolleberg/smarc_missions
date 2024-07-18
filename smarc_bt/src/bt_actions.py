@@ -25,6 +25,7 @@ from std_msgs.msg import Float64, Header, Bool, Empty
 from visualization_msgs.msg import MarkerArray
 from geographic_msgs.msg import GeoPoint
 # from sensor_msgs.msg import NavSatFix
+from mission_plan import Maneuver as Mission_Plan_Maneuver
 
 from std_srvs.srv import SetBool
 
@@ -907,3 +908,500 @@ class A_Followcourse(ptr.actions.ActionClient):
             self.feedback_message = "[S:{}]  [C:{}]".format(self.server_feedback_msg.feedback_message, self.feedback_message)
 
         return pt.Status.RUNNING
+    
+## New action servers and related actions
+
+class A_SetBBVariable_True(pt.behaviour.Behaviour):
+    def __init__(self, key):
+        super(A_SetBBVariable_True, self).__init__(name="A_SetBBVariable_True")
+        self.bb = pt.blackboard.Blackboard()
+        self.bb_key = key
+
+    def update(self):
+        self.bb.set(self.bb_key, True)
+        return pt.Status.SUCCESS
+
+class A_SetBBVariable_False(pt.behaviour.Behaviour):
+    def __init__(self, key):
+        super(A_SetBBVariable_False, self).__init__(name="A_SetBBVariable_False")
+        self.bb = pt.blackboard.Blackboard()
+        self.bb_key = key
+
+    def update(self):
+        self.bb.set(self.bb_key, False)
+        return pt.Status.SUCCESS
+
+class A_updateAvoidance_maneuver(pt.behaviour.Behaviour):
+    def __init__(self, key):
+        self.bb = pt.blackboard.Blackboard()
+        super(A_updateAvoidance_maneuver, self).__init__(name="A_updateAvoidance_maneuver")
+        self.bb = pt.blackboard.Blackboard()
+        self.vehicle = self.bb.get(bb_enums.VEHICLE_STATE)
+        self.bb_maneuver_key = key
+        self.max_wp_in_list = 100 #max allowed wps in list. When reached the oldest wp will be removed
+        self.update_distance = 10 # Only add a new wp to the list if we are Xm away from the last recorded position
+        self.wp_distance = 100
+        self.list_of_wp = []
+    
+    def _set_maneuver(self, utm_pos):
+        maneuver = Maneuver()
+        maneuver.name = str("Avoidance wp")
+        maneuver.vehicle_mode = 0
+        maneuver.wp_goal_tolerance = 20
+        maneuver.wp_rpm = 700
+        maneuver.wp_targetDepth = 0
+        maneuver.wp_targetAltitude = 200
+        maneuver.maneuver_type = Maneuver.MANEUVER_TYPE_WP
+
+        mpm = Mission_Plan_Maneuver(maneuver)
+        mpm.utm_wp = PoseStamped()
+        mpm.utm_wp.pose.position.x = utm_pos[0]
+        mpm.utm_wp.pose.position.y = utm_pos[1]
+        mpm.utm_wp.header.frame_id = 'utm'
+
+        self.bb.set(self.bb_maneuver_key, mpm)
+
+    def update(self):
+
+        lolo_position = self.vehicle.position_utm
+        
+        #No avoid wps in list? Add current pos, and set current pos a avoid WP.
+        if(len(self.list_of_wp) == 0):
+            self.list_of_wp.append(lolo_position)
+            self._set_maneuver(lolo_position)
+            rospy.loginfo("Updated emergency WP")
+            return pt.Status.SUCCESS
+
+        #Check if our current position is more than Xm from the last recorded position
+        last_pos = np.array(self.list_of_wp[-1])
+        dist = np.linalg.norm(np.array(lolo_position) - last_pos)
+        rospy.loginfo_throttle(10,"Distance from last saved position: " + str(dist))
+
+        if(dist > self.update_distance and len(self.list_of_wp) < self.max_wp_in_list):
+            self.list_of_wp.append(lolo_position)
+
+        #Check if we are more than X meters away from the first wp in the list
+        # and update the avoidance wp if that is the case
+        dist = np.linalg.norm(np.array(lolo_position) - np.array(self.list_of_wp[0]))
+        if(dist >= self.wp_distance):
+            self._set_maneuver(self.list_of_wp[0])
+
+            #Delete the wp from the list
+            del self.list_of_wp[0]
+
+        #Always success!
+        return pt.Status.SUCCESS
+
+class A_BBManeuver_depth_to_current(pt.behaviour.Behaviour):
+    def __init__(self, key):
+        self.bb = pt.blackboard.Blackboard()
+        super(A_BBManeuver_depth_to_current, self).__init__(name="A_BBManeuver_depth_to_current")
+        self.bb = pt.blackboard.Blackboard()
+        self.vehicle = self.bb.get(bb_enums.VEHICLE_STATE)
+        self.bb_maneuver_key = key
+
+    def update(self):
+
+        lolo_depth = self.vehicle.depth
+        
+        maneuver = self.bb.get(self.bb_maneuver_key)
+
+        maneuver.maneuver.wp_targetDepth = lolo_depth
+        maneuver.maneuver.course_targetDepth = lolo_depth
+
+        self.bb.set(self.bb_maneuver_key, maneuver)
+
+        rospy.loginfo_throttle(10, "Updated depth setpoint of Missionplan WP")
+
+        #Always success!
+        return pt.Status.SUCCESS
+
+
+class A_setBBManeuverFromPlan(pt.behaviour.Behaviour):
+    def __init__(self, key):
+        self.bb = pt.blackboard.Blackboard()
+        super(A_setBBManeuverFromPlan, self).__init__(name="A_setBBManeuverFromPlan")
+        self.bb = pt.blackboard.Blackboard()
+        self.vehicle = self.bb.get(bb_enums.VEHICLE_STATE)
+        self.bb_maneuver_key = key
+
+    def update(self):
+        mission_plan = self.bb.get(bb_enums.MISSION_PLAN_OBJ)
+        if mission_plan is None:
+            self.feedback_message = "No mission plan found!"
+            rospy.logwarn(self.feedback_message)
+            pt.Status.FAILURE
+
+        #Get current maneuver
+        maneuver = mission_plan.get_current_maneuver("A_setBBManeuverFromPlanAction")
+
+        if maneuver is None:
+            self.feedback_message = "No manuver found in mssion plan"
+            rospy.loginfo_throttle(3, self.feedback_message)
+            pt.Status.FAILURE
+        
+        self.bb.set(self.bb_maneuver_key, maneuver)
+        return pt.Status.SUCCESS
+        
+
+
+class A_GotoWaypoint_BB(ptr.actions.ActionClient):
+    def __init__(self,
+                 auv_config,
+                 key,
+                 action_namespace = None,
+                 node_name = "A_GotoWaypoint_BB"):
+        """
+        Runs an action server that will move the robot to the given waypoint.
+        The waypoint is taken from the blackboard using the key parameter
+
+        action_namespace -> if given, will send the goal to that server instead of
+        the default goto_waypoint
+        """
+
+        self.bb = pt.blackboard.Blackboard()
+        self.vehicle = self.bb.get(bb_enums.VEHICLE_STATE)
+        self.node_name = node_name
+        self.bb_maneuver_key = key
+
+
+        self.action_goal_handle = None
+
+        if action_namespace is None:
+            action_namespace = auv_config.GOTO_ACTION_NAMESPACE
+            action_namespace = action_namespace + "/goto_waypoint"
+
+        # become action client
+        ptr.actions.ActionClient.__init__(
+            self,
+            name = self.node_name,
+            action_spec = GotoWaypointAction,
+            action_goal = None,
+            action_namespace = action_namespace,
+            override_feedback_message_on_running = "Moving to waypoint"
+        )
+        self.server_feedback_msg = None
+
+        self.action_server_ok = False
+
+        self.goal_tf_frame = auv_config.UTM_LINK
+
+        # every X seconds, try to reconnect to the action server
+        # if the server wasnt up and ready when the BT was started
+        self.last_reconnect_attempt_time = 0
+        self.reconnect_attempt_period = 5
+
+    def setup(self, timeout):
+        """
+        Overwriting the normal ptr action setup to stop it from failiing the setup step
+        and instead handling this failure in the tree.
+        """
+        self.logger.debug("%s.setup()" % self.__class__.__name__)
+        self.action_client = actionlib.SimpleActionClient(
+            self.action_namespace,
+            self.action_spec
+        )
+
+        if not self.action_client.wait_for_server(rospy.Duration(timeout)):
+            self.logger.error("{0}.setup() could not connect to the action server at '{1}'".format(self.__class__.__name__, self.action_namespace))
+            self.action_client = None
+        else:
+            self.action_server_ok = True
+
+        return True
+
+    def make_goal_from_maneuver(self, maneuver):
+        # construct the message
+        goal = GotoWaypointGoal()
+        goal.waypoint.pose.header
+        goal.waypoint.pose.header.frame_id
+
+        goal.waypoint.pose = maneuver.utm_wp
+        
+        #rospy.loginfo("Goal: " + goal.waypoint.pose.header.frame_id)
+        goal.waypoint.goal_tolerance = maneuver.maneuver.wp_goal_tolerance
+
+        goal.waypoint.travel_altitude = maneuver.maneuver.wp_targetAltitude
+        goal.waypoint.travel_depth = maneuver.maneuver.wp_targetDepth
+
+        goal.waypoint.speed_control_mode = GotoWaypoint.SPEED_CONTROL_RPM
+        goal.waypoint.z_control_mode = GotoWaypoint.Z_CONTROL_DEPTH
+
+        goal.waypoint.travel_rpm = maneuver.maneuver.wp_rpm
+        goal.waypoint.speed_control_mode = GotoWaypoint.SPEED_CONTROL_RPM
+        goal.waypoint.name = maneuver.name
+        return goal
+
+    def feedback_cb(self, msg):
+        self.server_feedback_msg = msg
+
+    def send_goal(self):
+        self.server_feedback_msg = None
+        self.action_goal_handle = self.action_client.send_goal(self.action_goal, feedback_cb=self.feedback_cb)
+        self.sent_goal = True
+        #self.vehicle.last_goto_wp = self.action_goal.waypoint
+
+    def initialise(self):
+        if not self.action_server_ok:
+            self.feedback_message = "No action server found for {}!".format(self.action_namespace)
+            rospy.logwarn_throttle(5, self.feedback_message)
+            return
+
+        #Get maneuver from BB
+        maneuver = self.bb.get(self.bb_maneuver_key) #mission_plan.get_current_maneuver("GotoWaypointAction")
+
+        if maneuver is None:
+            self.feedback_message = "No maneuver in blackboard!"
+            rospy.loginfo_throttle(3, self.feedback_message)
+            return
+
+        #if wp.frame_id != self.goal_tf_frame:
+        #    self.feedback_message = 'The frame of the waypoint({0}) does not match the expected frame({1}) of the action client!'.format(wp.frame_id, self.goal_tf_frame)
+        #    rospy.logerr_throttle(5, self.feedback_message)
+        #    return
+
+
+        self.action_goal = self.make_goal_from_maneuver(maneuver)
+        rospy.loginfo("Goto waypoint goal initialized:"+str(self.action_goal.waypoint.name))
+        # ensure that we still need to send the goal
+        self.sent_goal = False
+
+    def update(self):
+        """
+        Check only to see whether the underlying action server has
+        succeeded, is running, or has cancelled/aborted for some reason and
+        map these to the usual behaviour return states.
+        """
+
+        if not self.action_server_ok:
+            self.feedback_message = "Action Server not available!"
+            rospy.logerr_throttle_identical(5, self.feedback_message)
+            t = time.time()
+            diff = t - self.last_reconnect_attempt_time
+            if diff < self.reconnect_attempt_period:
+                self.feedback_message = "Re-trying to connect in {}s".format(diff)
+            else:
+                self.setup(self.reconnect_attempt_period-1)
+
+            return pt.Status.FAILURE
+
+        # if your action client is not valid
+        if not self.action_client:
+            self.feedback_message = "ActionClient is invalid! Client:"+str(self.action_client)
+            rospy.logerr(self.feedback_message)
+            return pt.Status.FAILURE
+
+        # if the action_goal is invalid
+        if not self.action_goal:
+            self.feedback_message = "No action_goal!"
+            rospy.logwarn(self.feedback_message)
+            return pt.Status.FAILURE
+
+        # if goal hasn't been sent yet
+        if not self.sent_goal:
+            self.send_goal()
+            rospy.loginfo("Sent goal to action server:"+str(self.action_goal))
+            self.feedback_message = "Goal sent"
+            return pt.Status.RUNNING
+
+        # if the goal was aborted or preempted
+        if self.action_client.get_state() in [actionlib_msgs.GoalStatus.ABORTED,
+                                              actionlib_msgs.GoalStatus.PREEMPTED]:
+            self.feedback_message = "Aborted goal"
+            rospy.loginfo(self.feedback_message)
+            return pt.Status.FAILURE
+
+        result = self.action_client.get_result()
+
+        # if the goal was accomplished
+        if result is not None and result.reached_waypoint:
+            self.feedback_message = "Completed goal"
+            rospy.loginfo(self.feedback_message)
+            return pt.Status.SUCCESS
+        
+        self.feedback_message = "Waypoint actionserver client feedback." + str(rospy.Time.now())
+
+        if self.server_feedback_msg is not None and self.server_feedback_msg.feedback_message != "":
+            self.feedback_message = "[S:{}]  [C:{}]".format(self.server_feedback_msg.feedback_message, self.feedback_message)
+
+        return pt.Status.RUNNING
+
+class A_Followcourse_BB(ptr.actions.ActionClient):
+    def __init__(self,
+                 auv_config,
+                 key,
+                 action_namespace = None,
+                 node_name = "A_Followcourse_BB"):
+        """
+        Runs an action server that will move the robot to the given waypoint
+
+        action_namespace -> if given, will send the goal to that server instead of
+        the default goto_waypoint
+        """
+
+        self.bb = pt.blackboard.Blackboard()
+        self.vehicle = self.bb.get(bb_enums.VEHICLE_STATE)
+        self.node_name = node_name
+        self.bb_maneuver_key = key
+        
+        if action_namespace is None:
+            action_namespace = auv_config.GOTO_ACTION_NAMESPACE
+        action_namespace = action_namespace + "/follow_course"
+
+        # become action client
+        ptr.actions.ActionClient.__init__(self,
+            name = self.node_name,
+            action_spec = FollowCourseAction,
+            action_goal = None,
+            action_namespace = action_namespace,
+            override_feedback_message_on_running = "Following course"
+        )
+
+        self.action_goal_handle = None
+
+        self.server_feedback_msg = None
+        self.action_server_ok = False
+
+        # every X seconds, try to reconnect to the action server
+        # if the server wasnt up and ready when the BT was started
+        self.last_reconnect_attempt_time = 0
+        self.reconnect_attempt_period = 5
+
+
+    def setup(self, timeout):
+        """
+        Overwriting the normal ptr action setup to stop it from failiing the setup step
+        and instead handling this failure in the tree.
+        """
+        self.logger.debug("%s.setup()" % self.__class__.__name__)
+        self.action_client = actionlib.SimpleActionClient(
+            self.action_namespace,
+            self.action_spec
+        )
+
+        if not self.action_client.wait_for_server(rospy.Duration(timeout)):
+            self.logger.error("{0}.setup() could not connect to the action server at '{1}'".format(self.__class__.__name__, self.action_namespace))
+            self.action_client = None
+        else:
+            self.action_server_ok = True
+        return True
+
+    def make_goal_from_maneuver(self, maneuver):
+            # construct the message
+        goal = FollowCourseGoal()
+        goal.targetheading_deg = maneuver.maneuver.course_targetheading
+        goal.rpm = maneuver.maneuver.course_rpm
+        goal.runtime_s = maneuver.maneuver.course_runtime_s
+        goal.targetAltitude = maneuver.maneuver.course_targetAltitude
+        goal.targetDepth = maneuver.maneuver.course_targetDepth
+        return goal
+
+    def feedback_cb(self, msg):
+        self.server_feedback_msg = msg
+
+    def send_goal(self):
+        self.server_feedback_msg = None
+        self.action_goal_handle = self.action_client.send_goal(self.action_goal, feedback_cb=self.feedback_cb)
+        self.sent_goal = True
+        #self.vehicle.last_goto_wp = self.action_goal.waypoint
+
+    def initialise(self):
+        if not self.action_server_ok:
+            self.feedback_message = "No action server found for {}!".format(self.action_namespace)
+            rospy.logwarn_throttle(5, self.feedback_message)
+            return
+
+        #Get maneuver from BB
+        maneuver = self.bb.get(self.bb_maneuver_key)
+
+        if(maneuver is None):
+            return
+        
+        self.action_goal = self.make_goal_from_maneuver(maneuver)
+        rospy.loginfo("Maneuver goal initialized:")
+
+        # ensure that we still need to send the goal
+        self.sent_goal = False
+
+    def update(self):
+        """
+        Check only to see whether the underlying action server has
+        succeeded, is running, or has cancelled/aborted for some reason and
+        map these to the usual behaviour return states.
+        """
+
+        if not self.action_server_ok:
+            self.feedback_message = "Action Server not available!"
+            rospy.logerr_throttle_identical(5, self.feedback_message)
+            t = time.time()
+            diff = t - self.last_reconnect_attempt_time
+            if diff < self.reconnect_attempt_period:
+                self.feedback_message = "Re-trying to connect in {}s".format(diff)
+            else:
+                self.setup(self.reconnect_attempt_period-1)
+
+            return pt.Status.FAILURE
+
+        # if your action client is not valid
+        if not self.action_client:
+            self.feedback_message = "ActionClient is invalid! Client:"+str(self.action_client)
+            rospy.logerr(self.feedback_message)
+            return pt.Status.FAILURE
+
+        # if the action_goal is invalid
+        if not self.action_goal:
+            self.feedback_message = "No action_goal! (course)"
+            rospy.logwarn(self.feedback_message)
+            return pt.Status.FAILURE
+
+        # if goal hasn't been sent yet
+        if not self.sent_goal:
+            self.send_goal()
+            rospy.loginfo("Sent goal to action server:"+str(self.action_goal))
+            self.feedback_message = "Goal sent"
+            return pt.Status.RUNNING
+
+        # if the goal was aborted or preempted
+        if self.action_client.get_state() in [actionlib_msgs.GoalStatus.ABORTED,
+                                            actionlib_msgs.GoalStatus.PREEMPTED]:
+            self.feedback_message = "Aborted goal"
+            rospy.loginfo(self.feedback_message)
+            self.action_goal = None
+            return pt.Status.FAILURE
+
+        result = self.action_client.get_result()
+
+        # if the goal was accomplished
+        if result is not None and result.done:
+            self.feedback_message = "Completed goal"
+            rospy.loginfo(self.feedback_message)
+            self.action_goal = None
+            return pt.Status.SUCCESS
+
+        # no live updates, just report distance to planned wp
+        # still running, set our feedback message to distance left
+        #current_loc = self.vehicle.position_utm
+        #mplan = self.bb.get(bb_enums.MISSION_PLAN_OBJ)
+        #if mplan is not None and current_loc is not None:
+        #    wp = mplan.get_current_wp()
+        #    x,y = current_loc
+        #    h_dist = math.sqrt( (x-wp.x)**2 + (y-wp.y)**2 )
+        #    v_dist = wp.depth - self.vehicle.depth
+        #    self.feedback_message = "HDist:{:.2f}, VDist:{:.2f} towards {}".format(h_dist, v_dist, wp.wp.name)
+        self.feedback_message = "follow course actionserver client feedback." + str(rospy.Time.now())
+
+        if self.server_feedback_msg is not None and self.server_feedback_msg.feedback_message != "":
+            self.feedback_message = "[S:{}]  [C:{}]".format(self.server_feedback_msg.feedback_message, self.feedback_message)
+
+        return pt.Status.RUNNING
+    
+
+class A_Avoidence_test(pt.behaviour.Behaviour):
+    def __init__(self):
+        super(A_Avoidence_test, self).__init__(name="A_Avoidence_test")
+        self.bb = pt.blackboard.Blackboard()
+
+    def update(self):
+        rospy.logwarn("Doing obstacle avoidence")
+        return pt.Status.RUNNING
+
