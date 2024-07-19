@@ -16,6 +16,12 @@
 		<param name="robot_name" value="$(arg robot_name)"/>
 		<rosparam file="$(arg config_file)" command="load"/>
 	</node>
+
+	<!-- Avoidance WP following action -->
+	<node name="avoidance_wp" pkg="lolo_action_servers" type="goto_waypoint.py" output="screen" ns="$(arg robot_name)/ctrl">
+		<param name="robot_name" value="$(arg robot_name)"/>
+		<rosparam file="$(arg config_file)" command="load"/>
+	</node>
 	
 	
     
