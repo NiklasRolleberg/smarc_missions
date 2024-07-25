@@ -916,6 +916,7 @@ class A_SetBBVariable_True(pt.behaviour.Behaviour):
         super(A_SetBBVariable_True, self).__init__(name="A_SetBBVariable_True")
         self.bb = pt.blackboard.Blackboard()
         self.bb_key = key
+        self.feedback_message = "SetBBVariable :" + str(self.bb_key) + " -> True"
 
     def update(self):
         self.bb.set(self.bb_key, True)
@@ -926,6 +927,7 @@ class A_SetBBVariable_False(pt.behaviour.Behaviour):
         super(A_SetBBVariable_False, self).__init__(name="A_SetBBVariable_False")
         self.bb = pt.blackboard.Blackboard()
         self.bb_key = key
+        self.feedback_message = "SetBBVariable :" + str(self.bb_key) + " -> False"
 
     def update(self):
         self.bb.set(self.bb_key, False)
@@ -960,10 +962,13 @@ class A_updateAvoidance_maneuver(pt.behaviour.Behaviour):
         mpm.utm_wp.header.frame_id = 'utm'
 
         self.bb.set(self.bb_maneuver_key, mpm)
+        self.feedback_message = "Avoid maneuver set to X:{}, Y:{}, Depth:{}]".format(str(mpm.utm_wp.pose.position.x), str(mpm.utm_wp.pose.position.y), str(maneuver.wp_targetDepth))
 
     def update(self):
 
         lolo_position = self.vehicle.position_utm
+
+        if(lolo_position == None): return pt.Status.FAILURE
         
         #No avoid wps in list? Add current pos, and set current pos a avoid WP.
         if(len(self.list_of_wp) == 0):
@@ -1394,14 +1399,3 @@ class A_Followcourse_BB(ptr.actions.ActionClient):
             self.feedback_message = "[S:{}]  [C:{}]".format(self.server_feedback_msg.feedback_message, self.feedback_message)
 
         return pt.Status.RUNNING
-    
-
-class A_Avoidence_test(pt.behaviour.Behaviour):
-    def __init__(self):
-        super(A_Avoidence_test, self).__init__(name="A_Avoidence_test")
-        self.bb = pt.blackboard.Blackboard()
-
-    def update(self):
-        rospy.logwarn("Doing obstacle avoidence")
-        return pt.Status.RUNNING
-

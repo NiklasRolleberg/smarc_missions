@@ -59,7 +59,6 @@ from bt_actions import A_ExecuteManeuver, \
                        A_SetNextPlanAction, \
                        A_PublishFinalize, \
                        A_AbortPlan, \
-                       A_Avoidence_test, \
                        A_SetBBVariable_True, \
                        A_SetBBVariable_False, \
                        A_updateAvoidance_maneuver, \
@@ -162,8 +161,7 @@ def const_tree(auv_config):
         #######################
         # GOTO
         #######################
-        #runmission = A_ExecuteManeuver(auv_config = auv_config)        
-
+ 
         runmaneuver = Fallback(name="FB_runmaneuver",
                         children=[
 
@@ -195,18 +193,12 @@ def const_tree(auv_config):
                                ])
                         ])
 
-        #runmission = Fallback(name="FB_runmission",
-        #                children=[
-        #                    #TODO: Add Obstacle avoidance
-        #                    runmaneuver
-        #                ])
-
         unfinalize = pt.blackboard.SetBlackboardVariable(variable_name = bb_enums.MISSION_FINALIZED,
                                                          variable_value = False,
                                                          name = 'A_MissionFinalized->False')
 
 
-        # and then execute them in order
+        # and then execute them in order until the plan is done
         follow_plan = Sequence(name="SQ_FollowMissionPlan",
                                children=[
                                          C_ExpectPlanState(MissionControl.FB_RUNNING),
@@ -214,16 +206,7 @@ def const_tree(auv_config):
                                          A_setBBManeuverFromPlan("MISSIONPLAN_MANEUVER"),
                                          runmaneuver
                                ])
-
-        #######################
-        # until the plan is done
-        #######################
-        return Fallback(name="FB_ExecuteMissionPlan",
-                        children=[
-                            follow_plan
-                        ])
-
-
+        return follow_plan
 
     ###############################################
     # ROOT BEGINS

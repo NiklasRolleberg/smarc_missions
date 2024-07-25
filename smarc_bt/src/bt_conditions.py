@@ -195,7 +195,9 @@ class C_BBvariable_True(pt.behaviour.Behaviour):
             rospy.logerr_throttle(10, "C_BBvariable_True : variable is None")
 
         if(var == True):
+            self.feedback_message = str(self.bb_key) + " is True - Success"
             return pt.Status.SUCCESS
+        self.feedback_message = str(self.bb_key) + " is False - Failue"
         return pt.Status.FAILURE
 
 class C_BBvariable_False(pt.behaviour.Behaviour):
@@ -210,8 +212,10 @@ class C_BBvariable_False(pt.behaviour.Behaviour):
             rospy.logerr_throttle(10,"C_BBvariable_False : variable is None")
 
         if(var == False):
+            self.feedback_message = str(self.bb_key) + " is False - Success"
             return pt.Status.SUCCESS
-        return pt.Status.FAILURE
+        self.feedback_message = str(self.bb_key) + " is True - Failure"
+        return pt.Status.FAILURE    
 
 
 
@@ -295,7 +299,7 @@ class C_AvoidObstacle(pt.behaviour.Behaviour):
     def __init__(self):
         self.bb = pt.blackboard.Blackboard()
         self.vehicle = self.bb.get(bb_enums.VEHICLE_STATE)
-        self.min_alt = 200
+        self.min_alt = 50
         self.no_altitude_counter = 0
         super(C_AvoidObstacle, self).__init__(name="C_AvoidObstacle")
 
@@ -306,7 +310,7 @@ class C_AvoidObstacle(pt.behaviour.Behaviour):
         if time_since_last_update > 10:
             self.no_altitude_counter += 1
             self.feedback_message = "Last read:None, min:{m:.2f}".format(m=self.min_alt)
-            print("Obstacle avoid: time since last alt update" + str(time_since_last_update))
+            rospy.logwarn_throttle(10, "Obstacle avoid: time since last alt update" + str(time_since_last_update))
             return pt.Status.FAILURE
         else:
             self.feedback_message = "Last read:{l:.2f}, min:{m:.2f}".format(l=alt, m=self.min_alt)
