@@ -30,6 +30,10 @@ class C_TimeoutNotReached(pt.behaviour.Behaviour):
         if plan is None:
             self.feedback_message = "No plan for a timeout"
             return pt.Status.SUCCESS
+        
+        if(plan.state == MissionControl.FB_STOPPED):
+            self.feedback_message = "Plan is stopped"
+            return pt.Status.SUCCESS
 
         if plan.timeout_reached():
             self.feedback_message = "TIMEOUT"
@@ -114,10 +118,13 @@ class C_DiveTimeOK(pt.behaviour.Behaviour):
 
 
 class C_DepthOK(pt.behaviour.Behaviour):
-    def __init__(self):
+    def __init__(self, absolute_maximum_depth = None):
         self.bb = pt.blackboard.Blackboard()
         self.vehicle = self.bb.get(bb_enums.VEHICLE_STATE)
-        self.max_depth = self.vehicle.auv_config.MAX_DEPTH
+        if (absolute_maximum_depth is not None):
+            self.max_depth = absolute_maximum_depth
+        else:
+            self.max_depth = self.vehicle.auv_config.MAX_DEPTH
         super(C_DepthOK, self).__init__(name="C_DepthOK")
 
 
@@ -151,6 +158,31 @@ class C_DepthOK(pt.behaviour.Behaviour):
             return pt.Status.FAILURE
 
 
+class C_CompareDepthAndCTDOK(pt.behaviour.Behaviour):
+    def __init__(self, tol):
+        self.bb = pt.blackboard.Blackboard()
+        self.vehicle = self.bb.get(bb_enums.VEHICLE_STATE)
+        self.tolerance = tol
+        super(C_CompareDepthAndCTDOK, self).__init__(name="C_CompareDepthAndCTDOK")
+
+
+    def update(self):
+        #self.max_depth = self.bb.get(bb_enums.MAX_DEPTH)
+        ins_depth = self.vehicle.depth
+        ctd_depth = self.vehicle.ctd_depth
+        self.feedback_message = "ins depth:{l}, ctd depth:{m}".format(l=ins_depth, m=ctd_depth)
+
+        #print("last depth update: " + str(time_since_last_update))
+        if ins_depth is None or ctd_depth is None:
+            rospy.logwarn_throttle(5, "Depth or CTD depth is None")
+            return pt.Status.SUCCESS    
+        
+        diff = abs(ins_depth - ctd_depth)
+        if(diff < self.tolerance):
+            return pt.Status.SUCCESS
+        return pt.Status.FAILURE
+
+
 class C_AltOK(pt.behaviour.Behaviour):
     def __init__(self):
         self.bb = pt.blackboard.Blackboard()
@@ -164,7 +196,7 @@ class C_AltOK(pt.behaviour.Behaviour):
         alt = self.vehicle.altitude
         time_since_last_update = time.time() - self.vehicle.last_update_altitude
 
-        if time_since_last_update > 10:
+        if time_since_last_update > 10 or alt == math.nan:
             rospy.logwarn_throttle(10, "NO ALTITUDE READ! The this means something is not working. Start the altutude estimator.")
             self.no_altitude_counter += 1
             self.feedback_message = "Last read:None, min:{m:.2f}".format(m=self.min_alt)
@@ -175,12 +207,60 @@ class C_AltOK(pt.behaviour.Behaviour):
         else:
             self.feedback_message = "Last read:{l:.2f}, min:{m:.2f}".format(l=alt, m=self.min_alt)
         
-        if alt != math.nan or alt > self.min_alt: #Altutude = NaN means no bottom lock.
+        if alt > self.min_alt:
             self.no_altitude_counter = 0
             return pt.Status.SUCCESS
         else:
             rospy.loginfo_throttle(5, "Too close to the bottom! "+str(alt))
             return pt.Status.FAILURE
+
+class C_InsOK(pt.behaviour.Behaviour):
+    def __init__(self):
+        self.bb = pt.blackboard.Blackboard()
+        self.vehicle = self.bb.get(bb_enums.VEHICLE_STATE)
+        self.no_ins_counter = 0
+        super(C_InsOK, self).__init__(name="C_InsOK")
+
+    def update(self):
+        ins_msg = self.vehicle.raw_ins_obj
+        time_since_last_update = time.time() - self.vehicle._last_update_ins
+
+        #Check that we are receiving INS messages
+        if time_since_last_update > 2:
+            rospy.logwarn("NO INS READ! The this is bad")
+            self.no_ins_counter += 1
+            self.feedback_message = "not good"
+            if(self.no_ins_counter > 2):
+                return pt.Status.FAILURE
+            return pt.Status.SUCCESS
+        self.no_ins_counter = 0
+        #Check the data in the ins messages
+        return pt.Status.SUCCESS
+
+class C_InsVarianceOK(pt.behaviour.Behaviour):
+    def __init__(self, limit):
+        self.bb = pt.blackboard.Blackboard()
+        self.vehicle = self.bb.get(bb_enums.VEHICLE_STATE)
+        self.variance_limit = limit
+        super(C_InsVarianceOK, self).__init__(name="C_InsVarianceOK")
+
+    def update(self):
+        #Get latest INS message
+        ins_msg = self.vehicle.raw_ins_obj
+
+        #Checking for INS messages is done elsewhere. No need to handle that here
+        if(ins_msg == None):
+            return pt.Status.SUCCESS
+        
+        #Check INS covariance and compare with limits
+        ins_var_x = ins_msg.position_covariance[0]
+        ins_var_y = ins_msg.position_covariance[4]
+        ins_var_z = ins_msg.position_covariance[8]
+
+        if(ins_var_x > self.variance_limit): return pt.Status.FAILURE
+        if(ins_var_y > self.variance_limit): return pt.Status.FAILURE
+        if(ins_var_z > self.variance_limit): return pt.Status.FAILURE
+        return pt.Status.SUCCESS
 
 
 class C_BBvariable_True(pt.behaviour.Behaviour):
@@ -217,6 +297,44 @@ class C_BBvariable_False(pt.behaviour.Behaviour):
         self.feedback_message = str(self.bb_key) + " is True - Failure"
         return pt.Status.FAILURE    
 
+class C_ExpectEmergencyLevel(pt.behaviour.Behaviour):
+    def __init__(self, value):
+        self.bb = pt.blackboard.Blackboard()
+        self.value = value
+        super(C_ExpectEmergencyLevel, self).__init__(name="C_ExpectEmergencyLevel")
+
+    def update(self):
+        var = self.bb.get(bb_enums.EMERGENCY_STATE_KEY)
+        self.feedback_message = "EMERGENCY_LEVEL is: " + str(var)
+
+        if(var == None):
+            rospy.logerr_throttle(10,"C_ExpectEmergencyLevel : variable is None")
+            return pt.Status.FAILURE
+
+        if(var == self.value):
+            return pt.Status.SUCCESS
+        return pt.Status.FAILURE    
+
+class C_ExpectNormalMissionType(pt.behaviour.Behaviour):
+    def __init__(self):
+        """
+        Return success if the mission plan is not an emergency mission
+        """
+        super(C_ExpectNormalMissionType, self).__init__(name="C_ExpectNormalMissionType")
+        self.bb = pt.blackboard.Blackboard()
+
+    def update(self):
+        plan = self.bb.get(bb_enums.MISSION_PLAN_OBJ)
+        if plan is None:
+            self.feedback_message = "No plan - This counts as a normal mission type"
+            return pt.Status.SUCCESS
+
+        if plan.mission_type == plan.mission_types.NORMAL:
+            self.feedback_message = "Normal mission"
+            return pt.Status.SUCCESS
+
+        self.feedback_message = "Probably emergency mission"
+        return pt.Status.FAILURE
 
 
 class C_ExpectPlanState(pt.behaviour.Behaviour):
@@ -296,32 +414,34 @@ class C_ExpectBBManeuverType(pt.behaviour.Behaviour):
         return pt.Status.FAILURE
 
 class C_AvoidObstacle(pt.behaviour.Behaviour):
-    def __init__(self):
+    def __init__(self, min_distance):
         self.bb = pt.blackboard.Blackboard()
         self.vehicle = self.bb.get(bb_enums.VEHICLE_STATE)
-        self.min_alt = 50
+        self.min_alt = min_distance
         self.no_altitude_counter = 0
         super(C_AvoidObstacle, self).__init__(name="C_AvoidObstacle")
 
     def update(self):
         alt = self.vehicle.altitude
-        time_since_last_update = time.time() - self.vehicle.last_update_altitude
-
-        if time_since_last_update > 10:
-            self.no_altitude_counter += 1
-            self.feedback_message = "Last read:None, min:{m:.2f}".format(m=self.min_alt)
-            rospy.logwarn_throttle(10, "Obstacle avoid: time since last alt update" + str(time_since_last_update))
-            return pt.Status.FAILURE
-        else:
-            self.feedback_message = "Last read:{l:.2f}, min:{m:.2f}".format(l=alt, m=self.min_alt)
+        
+        self.feedback_message = "Last read:{l:.2f}, min:{m:.2f}".format(l=alt, m=self.min_alt)
 
         rospy.logwarn_throttle(30,"obstacle check. alt=" +str(alt) + ", min alt=" + str(self.min_alt))
         
         if alt != math.nan and alt < self.min_alt: #Altutude = NaN means no bottom lock.
-            self.no_altitude_counter = 0
-            return pt.Status.SUCCESS
             rospy.loginfo_throttle(5, "Too close to the obstacle! "+str(alt))    
+            return pt.Status.SUCCESS
         return pt.Status.FAILURE
+
+class C_Success(pt.behaviour.Behaviour):
+    def __init__(self):
+        super(C_Success, self).__init__(name="C_Success")
+
+    def update(self):
+        return pt.Status.SUCCESS
+
+
+
 
 
 

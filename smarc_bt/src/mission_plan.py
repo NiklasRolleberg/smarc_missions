@@ -254,6 +254,11 @@ class MissionPlan:
         "EMERGENCY",
         "RECEIVED",
         "COMPLETED"]
+
+    class mission_types():
+        NORMAL = 0
+        EMERGENCY = 1
+        
     def __init__(self,
                  auv_config,
                  mission_control_msg = None
@@ -269,6 +274,8 @@ class MissionPlan:
         # uint8 FB_EMERGENCY=3
         # uint8 FB_RECEIVED=4
         self.state = MissionControl.FB_STOPPED
+
+        self.mission_type = self.mission_types.NORMAL
 
         # used to report when the mission was received
         self.creation_time = time.time()

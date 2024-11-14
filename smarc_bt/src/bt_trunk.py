@@ -28,7 +28,7 @@ from auv_config import AUVConfig
 from reconfig_server import ReconfigServer
 
 # tree leaves
-
+'''
 from bt_conditions import C_DepthOK, \
                           C_DiveTimeOK, \
                           C_NoAbortReceived, \
@@ -41,7 +41,7 @@ from bt_conditions import C_DepthOK, \
                           C_TimeoutNotReached,\
                           C_BBvariable_True, \
                           C_BBvariable_False
-
+'''
 from bt_common import Sequence, \
                       CheckBlackboardVariableValue, \
                       ReadTopic, \
@@ -50,6 +50,7 @@ from bt_common import Sequence, \
                       Counter, \
                       Not
 
+'''
 from bt_actions import A_ExecuteManeuver, \
                        A_GotoWaypoint, \
                        A_Followcourse, \
@@ -62,7 +63,10 @@ from bt_actions import A_ExecuteManeuver, \
                        A_SetBBVariable_True, \
                        A_SetBBVariable_False, \
                        A_updateAvoidance_maneuver, \
-                       A_BBManeuver_depth_to_current
+                       A_BBManeuver_depth_to_current, \
+'''
+from bt_actions import *
+from bt_conditions import *
 
 
 
@@ -115,43 +119,97 @@ def const_tree(auv_config):
 
 
     def const_safety_tree():
+       
         safety_checks = Sequence(name="SQ_SafetyChecks",
                         blackbox_level=1,
                         children=[
-                            C_NoAbortReceived(),
-                            C_AltOK(),
-                            C_DepthOK(),
-                            C_DiveTimeOK(),
-                            C_LeakOK(),
-                            C_TimeoutNotReached()
+                            #C_NoAbortReceived(),
+                            ########################################################################
+                            Fallback(name="FB_really_bad_problem",
+                                blackbox_level=1,
+                                children=[
+                                    Sequence(name="SQ_really_bad_problem_checks",
+                                             blackbox_level=1,
+                                             children=[
+                                                 C_LeakOK(),
+                                                 C_DepthOK(750)
+                                             ]),
+                                    A_DropWeight(),
+                                    A_setEmergencyRequest(bb_enums.EMERGENCY_LEVEL.LEVEL2)
+                                ]),
+
+                            ########################################################################
+                            Fallback(name="FB_bad_problem",
+                                blackbox_level=1,
+                                children=[
+                                    Sequence(name="SQ_bad_problem_checks",
+                                             blackbox_level=1,
+                                             children=[
+                                                 C_InsOK(),
+                                                 C_CompareDepthAndCTDOK(tol=6),
+                                                 C_DiveTimeOK(),
+                                                 C_InsVarianceOK(limit=200)
+                                                 #- IBS timeouts / Captain errors
+                                             ]),
+                                    A_setEmergencyRequest(bb_enums.EMERGENCY_LEVEL.LEVEL2)
+                                ]),
+
+                            ########################################################################
+                            Fallback(name="FB_good_problem",
+                                blackbox_level=1,
+                                children=[
+                                    Sequence(name="SQ_good_checks",
+                                             blackbox_level=1,
+                                             children=[
+                                                C_DepthOK(),
+                                                Fallback(name="FB_in_water", 
+                                                         blackbox_level=1,
+                                                         children=[
+                                                             C_DepthOK(2),
+                                                             C_AltOK()
+                                                         ]),
+                                                C_TimeoutNotReached()
+                                             ]),
+                                    A_setEmergencyRequest(bb_enums.EMERGENCY_LEVEL.LEVEL1)
+                                ])
                         ])
+        safety_check_tree = Fallback(name="FB_Safety tree",
+                                     blackbox_level=1,
+                                     children=[
+                                         safety_checks,
+                                         C_Success()
+                                     ])
+        
 
 
-        skip_wp = Sequence(name='SQ_CountEmergenciesAndSkip',
-                           children = [
-                               Counter(n=auv_config.EMERGENCY_TRIALS_BEFORE_GIVING_UP,
-                                       name="A_EmergencyCounter",
-                                       reset=True),
-                               A_SetNextPlanAction()
-                           ])
 
-        abort = Sequence(name="SQ_ABORT",
-                         children = [
-                             A_SimplePublisher(topic=auv_config.ABORT_TOPIC,
-                                               message_object = Empty()),
-                             A_AbortPlan(),
-                             #A_ExecuteManeuver(auv_config = auv_config,
-                             #               action_namespace = auv_config.EMERGENCY_ACTION_NAMESPACE,
-                             #               node_name = 'A_EmergencySurface',
-                             #               goalless = True)
-                         ])
+        emergency_handling = Fallback(name="FB_Emergency handling", blackbox_level=1,  
+                                    children=[
+                                        Sequence(name="SQ_EmergencyHandling",
+                                            children=[
+                                                A_setEmergencyLevelFromRequest(), #Set emergency level from emergency request
+                                                Fallback(name="FB_emergency_level_check",
+                                                    children=[
+                                                        Sequence(name="SQ_emergency_level_1",
+                                                        children= [
+                                                            C_ExpectEmergencyLevel(bb_enums.EMERGENCY_LEVEL.LEVEL1),  # Check emergency level
+                                                            A_loadEmergencyMission()                                  # Load emergency mission
+                                                ]),
+                                                Sequence(name="SQ_emergency_level_2",
+                                                    children= [
+                                                        C_ExpectEmergencyLevel(bb_enums.EMERGENCY_LEVEL.LEVEL2),
+                                                        A_AbortPlan()
+                                                ])
+                                            ])
+                                        ]),
+                                        C_Success()
+                                    ])
 
 
-        return Fallback(name='FB_SafetyOK',
+        return Sequence(name='SQ_SafetyTree',
                         children = [
-                            safety_checks,
-                            skip_wp,
-                            abort
+                            safety_check_tree,
+                            emergency_handling
                         ])
 
 
@@ -169,12 +227,16 @@ def const_tree(auv_config):
                                children=[
                                         Fallback(name="FB_Run",
                                             children=[
-                                                C_AvoidObstacle(),
+                                                C_AvoidObstacle(min_distance=auv_config.MIN_OBSTACLE_RANGE),
                                                 C_BBvariable_True(key = "AVOIDING_OBSTACLE")
                                             ]),
                                         A_SetBBVariable_True(key = "AVOIDING_OBSTACLE"),
                                         A_BBManeuver_depth_to_current(key="MISSIONPLAN_MANEUVER"),
-                                        A_GotoWaypoint_BB(auv_config = auv_config, key = "AVOIDANCE_MANEUVER", action_namespace=auv_config.AVOID_ACTION_NAMESPACE),
+                                        Fallback(name="FB_Avoid", 
+                                                 children=[
+                                                        A_GotoWaypoint_BB(auv_config = auv_config, key = "AVOIDANCE_MANEUVER", action_namespace=auv_config.AVOID_ACTION_NAMESPACE),
+                                                        A_setEmergencyRequest(bb_enums.EMERGENCY_LEVEL.LEVEL2) #Avoid maneuver failed. Set emergency level 2
+                                                 ]),
                                         A_SetBBVariable_False(key = "AVOIDING_OBSTACLE")
                                ])
                             ,
@@ -191,6 +253,18 @@ def const_tree(auv_config):
                                          A_GotoWaypoint_BB(auv_config = auv_config, key = "MISSIONPLAN_MANEUVER"),
                                          A_SetNextPlanAction()
                                ])
+                            ,
+                            Fallback(name="FB_ac_failed_set_emergency", #Actionserver has failed. Possibly due to timeout
+                                     children = [
+                                         Sequence(name="SQ_normal_mission_failed", #request emergency level 1
+                                                  children=[
+                                                      C_ExpectNormalMissionType(),
+                                                      A_setEmergencyRequest(bb_enums.EMERGENCY_LEVEL.LEVEL1)
+                                                      ]
+                                                  ),
+                                        A_setEmergencyRequest(bb_enums.EMERGENCY_LEVEL.LEVEL2) #Emergency mission failed.Set emergency level 2
+                                     ]), 
+                             
                         ])
 
         unfinalize = pt.blackboard.SetBlackboardVariable(variable_name = bb_enums.MISSION_FINALIZED,
@@ -228,7 +302,7 @@ def const_tree(auv_config):
     root = Sequence(name='SQ_ROOT',
                     children=[
                               const_data_ingestion_tree(),
-                              #const_safety_tree(),
+                              const_safety_tree(),
                               Fallback(name="FB_UpdateAvoidWP",
                                     children=[
                                         C_BBvariable_True(key = "AVOIDING_OBSTACLE"),
@@ -296,6 +370,10 @@ def main():
     # put the vehicle model inside the bb
     bb = pt.blackboard.Blackboard()
     bb.set(bb_enums.VEHICLE_STATE, vehicle)
+
+    #Set emergency level
+    bb.set(bb_enums.EMERGENCY_REQUEST_KEY, bb_enums.EMERGENCY_LEVEL.NONE)
+    bb.set(bb_enums.EMERGENCY_STATE_KEY, bb_enums.EMERGENCY_LEVEL.NONE)
 
     # then we need the utm-ll conversion service in lotsa places in the BT
     # so we acquire that...

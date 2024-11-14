@@ -4,6 +4,7 @@ LEAK_TOPIC : 'core/leak'
 PATH_TOPIC : 'ctrl/planned_path'
 LATLON_TOPIC : 'dr/lat_lon'
 GPS_TOPIC : 'core/gps'
+INS_TOPIC: 'core/ins'
 ROLL_TOPIC : 'dr/roll'
 PITCH_TOPIC : 'dr/pitch'
 YAW_TOPIC : 'dr/yaw'
@@ -14,6 +15,7 @@ T2_TOPIC: 'core/thruster2_fb'
 BATT_TOPIC: 'core/battery'
 DEPTH_TOPIC: 'dr/depth'
 ALTITUDE_TOPIC: 'dr/altitude'
+CTD_TOPIC: 'sensors/ctd'
 TEMP_TOPIC: 'system/temperatures'
 SYSTEM_STATUS_TOPIC: 'system/status'
 
@@ -35,6 +37,7 @@ ALGAE_FOLLOW_WP : 'smarc_bt/algae_farm/wp'
 
 # actions and services
 GOTO_ACTION_NAMESPACE : 'ctrl'
+AVOID_ACTION_NAMESPACE : 'ctrl/avoidance_wp'
 EMERGENCY_ACTION_NAMESPACE : 'ctrl/emergency_surface_action'
 
 
@@ -56,9 +59,13 @@ MISSION_CONTROL_TOPIC : 'smarc_bt/mission_control'
 BTCOMMAND_TOPIC: 'smarc_bt/bt_command'
 
 # hard values
-MAX_DEPTH : 20
-MIN_ALTITUDE : 0.1
+MAX_DEPTH : 400
+MIN_ALTITUDE : 10
 MAX_DIVETIME : 1800
+MIN_OBSTACLE_RANGE : 16
+HOME_LAT : 81.99452972159399
+HOME_LON : -44.438220284618296
+
 # how many ticks to run emergency action before we give up
 # on the current wp and skip it
 # in ticks

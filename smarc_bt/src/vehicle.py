@@ -15,8 +15,10 @@ from sam_msgs.msg import PercentStamped
 from lolo_msgs.msg import Pressures
 from lolo_msgs.msg import Temperatures
 from lolo_msgs.msg import Status
+from lolo_msgs.msg import RBR_ctd
 from std_msgs.msg import Float64
 from std_msgs.msg import Float32
+from ixblue_ins_msgs.msg import Ins
 
 RADTODEG = 360 / (math.pi * 2)
 
@@ -89,6 +91,10 @@ class Vehicle(object):
         self._status_str_gps = "Uninitialized"
         self._last_update_gps = -1
 
+        self.raw_ins_obj = None
+        self._ins_sub = rospy.Subscriber(self.auv_config.INS_TOPIC, Ins, self._ins_cb, queue_size=2)
+        self._last_update_ins = -1
+
         '''
         # VBS, LCG
         self.vbs = None
@@ -127,6 +133,10 @@ class Vehicle(object):
         #self.batt_v = None
         #self.batt_percent = None
         #self._batt_sub = rospy.Subscriber(self.auv_config.BATT_TOPIC, BatteryState, self._batt_cb, queue_size=2)
+
+        # CTD
+        self.ctd_depth = None
+        self._ctd_sub = rospy.Subscriber(self.auv_config.CTD_TOPIC, RBR_ctd, self._ctd_cb, queue_size=2)
 
         #Temperatures
         self.cap_temp = None
@@ -294,6 +304,10 @@ class Vehicle(object):
         self._last_update_gps = time.time()
         self._animation.update(4)
 
+    def _ins_cb(self, msg : Ins):
+        self.raw_ins_obj = msg
+        self._last_update_ins = time.time()
+
     def _vbs_cb(self, msg):
         self.vbs = msg.value
 
@@ -309,6 +323,9 @@ class Vehicle(object):
     def _batt_cb(self, msg):
         self.batt_v = msg.voltage
         self.batt_percent = msg.percentage
+
+    def _ctd_cb(self,msg : RBR_ctd):
+        self.ctd_depth = msg.depth
 
     def _depth_cb(self, msg: float) -> None:
         self.depth = msg.data
@@ -358,3 +375,7 @@ class Vehicle(object):
         self.prevco_leak = msg.prevco_leak
         self.battery1_leak = msg.battery1_leak
         self.battery2_leak = msg.battery2_leak
+
+        if(self.captain_leak or self.esc_leak or self.edw_leak or self.prevco_leak or self.battery1_leak or self.battery2_leak):
+            self.leak = 1
+            self._last_update_leak = time.time()

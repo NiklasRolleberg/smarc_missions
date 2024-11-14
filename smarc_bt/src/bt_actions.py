@@ -87,6 +87,7 @@ class A_PublishFinalize(pt.behaviour.Behaviour):
                 mission_plan = self.bb.get(bb_enums.MISSION_PLAN_OBJ)
                 mission_plan.complete_mission()
                 self.feedback_message = "Mission finalized, plan is go<-False"
+                self.bb.set(bb_enums.MISSION_PLAN_OBJ, None)
                 return pt.Status.SUCCESS
             except:
                 msg = "Couldn't publish"
@@ -120,8 +121,10 @@ class A_SetNextPlanAction(pt.behaviour.Behaviour):
             return pt.Status.FAILURE
 
         if not self.do_not_visit:
+            pass
             #mission_plan.visit_wp()
-            mission_plan.complete_maneuver()
+        
+        mission_plan.complete_maneuver()
 
         #next_action = mission_plan.get_current_wp("SetNextPlanAction")
         next_action = mission_plan.get_current_maneuver("SetNextPlanAction")
@@ -129,7 +132,7 @@ class A_SetNextPlanAction(pt.behaviour.Behaviour):
         if next_action is None:
             self.feedback_message = "Next action was None"
             rospy.logwarn_throttle(1, self.feedback_message)
-            return pt.Status.FAILURE
+            return pt.Status.SUCCESS
 
         rospy.loginfo_throttle_identical(5, "Set CURRENT_PLAN_ACTION {} to: {}".format(self.do_not_visit, str(next_action)))
         self.bb.set(bb_enums.CURRENT_PLAN_ACTION, next_action)
@@ -909,6 +912,34 @@ class A_Followcourse(ptr.actions.ActionClient):
 
         return pt.Status.RUNNING
     
+class A_setEmergencyRequest(pt.behaviour.Behaviour):
+    def __init__(self, level):
+        super(A_setEmergencyRequest, self).__init__(name="A_setEmergencyRequest")
+        self.bb = pt.blackboard.Blackboard()
+        self.level = level
+        self.feedback_message = "SetEmergencyRequest :" + str(self.level) 
+
+    def update(self):
+        self.bb.set(bb_enums.EMERGENCY_REQUEST_KEY, self.level)
+        return pt.Status.SUCCESS
+    
+class A_setEmergencyLevelFromRequest(pt.behaviour.Behaviour):
+    def __init__(self):
+        super(A_setEmergencyLevelFromRequest, self).__init__(name="A_setEmergencyLevelFromRequest")
+        self.bb = pt.blackboard.Blackboard()
+
+    def update(self):
+        request = self.bb.get(bb_enums.EMERGENCY_REQUEST_KEY)
+        current_emergency_level = self.bb.get(bb_enums.EMERGENCY_STATE_KEY)
+
+        self.feedback_message = "request {}, emergency {}".format(request, current_emergency_level)
+
+        if(request > current_emergency_level):
+            self.bb.set(bb_enums.EMERGENCY_STATE_KEY, request)
+            rospy.logwarn("Emergency level set to: " + str(request))
+            return pt.Status.SUCCESS
+        return pt.Status.FAILURE
+
 ## New action servers and related actions
 
 class A_SetBBVariable_True(pt.behaviour.Behaviour):
@@ -969,6 +1000,10 @@ class A_updateAvoidance_maneuver(pt.behaviour.Behaviour):
         lolo_position = self.vehicle.position_utm
 
         if(lolo_position == None): return pt.Status.FAILURE
+
+        if(lolo_position[0] == None or lolo_position[1] == None):
+            rospy.logwarn("Lolo coordnate is None" + str(lolo_position))
+            return pt.Status.FAILURE
         
         #No avoid wps in list? Add current pos, and set current pos a avoid WP.
         if(len(self.list_of_wp) == 0):
@@ -1011,8 +1046,8 @@ class A_BBManeuver_depth_to_current(pt.behaviour.Behaviour):
         
         maneuver = self.bb.get(self.bb_maneuver_key)
 
-        maneuver.maneuver.wp_targetDepth = lolo_depth
-        maneuver.maneuver.course_targetDepth = lolo_depth
+        maneuver.maneuver.wp_targetDepth = min(maneuver.maneuver.wp_targetDepth, lolo_depth)
+        maneuver.maneuver.course_targetDepth = min(maneuver.maneuver.course_targetDepth, lolo_depth)
 
         self.bb.set(self.bb_maneuver_key, maneuver)
 
@@ -1399,3 +1434,79 @@ class A_Followcourse_BB(ptr.actions.ActionClient):
             self.feedback_message = "[S:{}]  [C:{}]".format(self.server_feedback_msg.feedback_message, self.feedback_message)
 
         return pt.Status.RUNNING
+
+
+
+class A_loadEmergencyMission(pt.behaviour.Behaviour):
+    def __init__(self):
+        """
+        Loads a new mission into the missionplan object and starts it
+        """
+        super(A_loadEmergencyMission, self).__init__(name="A_loadEmergencyMission")
+        self.bb = pt.blackboard.Blackboard()
+        self.vehicle = self.bb.get(bb_enums.VEHICLE_STATE)
+
+    def update(self):
+        #Create emergency mission
+     
+        mission_msg = MissionControl()
+        mission_msg.name = "GOHOME_MISSION"
+        mission_msg.timeout = 3600
+        
+        ## Mission
+        #Go to start point
+        wp = Maneuver()
+        wp.name = str("ermgency_wp_1")
+        wp.vehicle_mode = 0
+        wp.wp_goal_tolerance = 10
+        wp.wp_rpm = 350
+        wp.wp_targetDepth = -1
+        wp.wp_targetAltitude = 10
+        wp.wp_targetLat = self.vehicle.auv_config.HOME_LAT
+        wp.wp_targetLon = self.vehicle.auv_config.HOME_LON
+        wp.maneuver_type = Maneuver.MANEUVER_TYPE_WP
+        mission_msg.maneuvers.append(wp)
+
+        new_plan = MissionPlan(auv_config = self.vehicle, mission_control_msg = mission_msg)
+        new_plan.mission_type=new_plan.mission_types.EMERGENCY
+        new_plan.start_mission()
+
+        self.bb.set(bb_enums.MISSION_PLAN_OBJ, new_plan)
+
+        rospy.logwarn("Loaded emergency mission")
+
+        return pt.Status.RUNNING
+
+class A_DropWeight(pt.behaviour.Behaviour):
+    """
+    Publishes a message to the drop weight topic
+    """
+    def __init__(self, queue_size=1):
+        super(A_DropWeight, self).__init__("A_DropWeight")
+        self.topic = "/lolo/core/drop_weight"
+        self.message_object = Empty()
+        self.queue_size = queue_size
+        self.last_published_time = None
+
+    def setup(self, timeout):
+        self.pub = rospy.Publisher(self.topic, Empty, queue_size=self.queue_size)
+        return True
+
+    def update(self):
+        if self.last_published_time is not None:
+            time_since = time.time() - self.last_published_time
+            self.feedback_message = "Last pub'd:{:.2f}s ago".format(time_since)
+        else:
+            self.feedback_message = "Never published!"
+
+        try:
+            self.pub.publish(self.message_object)
+            self.last_published_time = time.time()
+            self.feedback_message = "Just published"
+            return pt.Status.FAILURE
+        except:
+            msg = "Couldn't publish"
+            rospy.logwarn_throttle(1, msg)
+            self.feedback_message = msg
+            return pt.Status.FAILURE
+

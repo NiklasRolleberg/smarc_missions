@@ -10,6 +10,9 @@ ABORT = 'abort'
 MAX_DEPTH = 'max_depth'
 MIN_ALTITUDE = 'min_altitude'
 MAX_DIVETIME = 'max_divetime'
+MIN_OBSTACLE_RANGE = 'min_obstacle_range'
+HOME_LAT = 'home_lat'
+HOME_LON = 'home_lon'
 
 MISSION_PLAN_OBJ = 'misison_plan'
 MANEUVER_ACTIONS = 'maneuver_actions'
@@ -48,3 +51,12 @@ GUI_WP = 'gui_wp'
 
 LLTOUTM_SERVICE_NAME = 'll2utm_service'
 UTMTOLL_SERVICE_NAME = 'utm2ll_service'
+
+#Emergency related things
+EMERGENCY_REQUEST_KEY = 'emergency_request_bb'
+EMERGENCY_STATE_KEY = 'emergency_state_bb'
+
+class EMERGENCY_LEVEL():
+    NONE = 0
+    LEVEL1 = 1
+    LEVEL2 = 2
